@@ -258,12 +258,11 @@ The frontend should display pricing information clearly but must never be the au
 
 ## 15. Related Documentation
 
-- `docs/01-product/product-requirements.md`
 - `docs/01-product/user-journeys.md`
-- `docs/02-product/decision-log.md`
-- `docs/03-technical-design/database-design.md`
-- `docs/03-technical-design/api-specification.md`
-- `docs/03-technical-design/system-architecture.md`
+- `docs/02-decisions/decision-log.md`
+- `docs/04-technical-design/database-design.md`
+- `docs/04-technical-design/api-specification.md`
+- `docs/04-technical-design/system-architecture.md`
 - `docs/documentation-roadmap.md`
 
 **End of document.**

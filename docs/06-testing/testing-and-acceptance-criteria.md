@@ -283,13 +283,12 @@ A release should only proceed when:
 
 ## 20. Related Documentation
 
-- `docs/01-product/product-requirements.md`
 - `docs/01-product/user-journeys.md`
-- `docs/02-product/pricing-and-payment-specification.md`
-- `docs/03-technical-design/api-specification.md`
-- `docs/03-technical-design/database-design.md`
-- `docs/04-security/security-and-privacy-requirements.md`
-- `docs/04-security/risk-and-incident-management.md`
+- `docs/03-product-specifications/pricing-and-payment-specification.md`
+- `docs/04-technical-design/api-specification.md`
+- `docs/04-technical-design/database-design.md`
+- `docs/05-security/security-and-privacy-requirements.md`
+- `docs/05-security/risk-and-incident-management.md`
 - `docs/documentation-roadmap.md`
 
 **End of document.**

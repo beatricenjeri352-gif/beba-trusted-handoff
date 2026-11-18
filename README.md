@@ -572,4 +572,39 @@ The sender remains responsible for choosing the carrier. Beba provides the tools
 
 The MVP should prioritise a reliable delivery workflow, transparent pricing, controlled carrier onboarding and clear delivery records before adding more advanced features.
 
-**Document status:** Working draft. Confirmed decisions are also recorded in `docs/02-product-decisions/decision-log.md`.
+**Document status:** Working draft. Confirmed decisions are also recorded in `docs/02-decisions/decision-log.md`
+
+# Beba Repository Guide
+
+Beba is a delivery coordination platform with an early browser prototype and a set of product, technical, security, testing, and launch documents.
+
+## Repository layout
+
+- `prototype/index.html` — runnable browser-only product demonstration
+- `docs/01-product/` — product journeys
+- `docs/02-decisions/` — decision log
+- `docs/03-product-specifications/` — pricing and payment specifications
+- `docs/04-technical-design/` — architecture, API, and database design
+- `docs/05-security/` — security, privacy, and incident management
+- `docs/06-testing/` — testing and acceptance criteria
+- `docs/07-launch/` — pilot launch plan
+- `.agents/skills/` — reusable repository-specific agent instructions
+
+## View the prototype
+
+Open `prototype/index.html` directly in a browser. No build step or backend is currently required.
+
+The prototype uses browser memory and demonstration data. It does not provide real authentication, payments, tracking, storage, or production security.
+
+## Development workflow
+
+- Create work on a feature branch rather than `main`.
+- Keep documentation in the numbered `docs/` structure.
+- Update relative links when files or directories move.
+- Do not commit secrets or private identity documents.
+- Before committing, run:
+
+```bash
+git diff --check
+git status --short --branch
+```
