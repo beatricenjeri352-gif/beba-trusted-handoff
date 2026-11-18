@@ -9,6 +9,7 @@ This directory contains the product, business, technical, security, testing, and
 - [Pricing and payment specification](03-product-specifications/pricing-and-payment-specification.md)
 - [API specification](04-technical-design/api-specification.md)
 - [Database design](04-technical-design/database-design.md)
+- [Supabase setup](04-technical-design/supabase-setup.md)
 - [System architecture](04-technical-design/system-architecture.md)
 - [Security and privacy requirements](05-security/security-and-privacy-requirements.md)
 - [Risk and incident management](05-security/risk-and-incident-management.md)
