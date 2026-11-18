@@ -329,14 +329,13 @@ Before launch, Beba must confirm:
 
 ## 17. Related Documentation
 
-- `docs/01-product/product-requirements.md`
 - `docs/01-product/user-journeys.md`
-- `docs/02-product/pricing-and-payment-specification.md`
-- `docs/03-technical-design/system-architecture.md`
-- `docs/03-technical-design/api-specification.md`
-- `docs/04-security/security-and-privacy-requirements.md`
-- `docs/04-security/risk-and-incident-management.md`
-- `docs/05-testing/testing-and-acceptance-criteria.md`
+- `docs/03-product-specifications/pricing-and-payment-specification.md`
+- `docs/04-technical-design/system-architecture.md`
+- `docs/04-technical-design/api-specification.md`
+- `docs/05-security/security-and-privacy-requirements.md`
+- `docs/05-security/risk-and-incident-management.md`
+- `docs/06-testing/testing-and-acceptance-criteria.md`
 - `docs/documentation-roadmap.md`
 
 **End of document.**
