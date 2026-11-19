@@ -175,6 +175,67 @@ export type Database = {
           },
         ]
       }
+      delivery_assignments: {
+        Row: {
+          accepted_at: string | null
+          assignment_status: Database["public"]["Enums"]["assignment_status"]
+          carrier_user_id: string
+          completed_at: string | null
+          created_at: string
+          delivery_request_id: string
+          id: string
+          responded_at: string | null
+          selected_at: string
+          selected_by_user_id: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          assignment_status?: Database["public"]["Enums"]["assignment_status"]
+          carrier_user_id: string
+          completed_at?: string | null
+          created_at?: string
+          delivery_request_id: string
+          id?: string
+          responded_at?: string | null
+          selected_at?: string
+          selected_by_user_id: string
+        }
+        Update: {
+          accepted_at?: string | null
+          assignment_status?: Database["public"]["Enums"]["assignment_status"]
+          carrier_user_id?: string
+          completed_at?: string | null
+          created_at?: string
+          delivery_request_id?: string
+          id?: string
+          responded_at?: string | null
+          selected_at?: string
+          selected_by_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_assignments_carrier_user_id_fkey"
+            columns: ["carrier_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_assignments_delivery_request_id_fkey"
+            columns: ["delivery_request_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_assignments_selected_by_user_id_fkey"
+            columns: ["selected_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       delivery_requests: {
         Row: {
           accepted_quote_id: string | null
@@ -428,7 +489,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_for_carrier: { Args: never; Returns: undefined }
       is_administrator: { Args: never; Returns: boolean }
+      respond_to_delivery_assignment: {
+        Args: {
+          assignment_id: string
+          response: Database["public"]["Enums"]["assignment_status"]
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       account_status: "active" | "suspended" | "deleted"
@@ -438,6 +507,12 @@ export type Database = {
         | "approved"
         | "rejected"
         | "suspended"
+      assignment_status:
+        | "pending_carrier_confirmation"
+        | "accepted"
+        | "declined"
+        | "cancelled"
+        | "completed"
       delivery_method: "within_town" | "to_stage" | "intertown"
       delivery_status:
         | "draft"
@@ -598,6 +673,13 @@ export const Constants = {
         "approved",
         "rejected",
         "suspended",
+      ],
+      assignment_status: [
+        "pending_carrier_confirmation",
+        "accepted",
+        "declined",
+        "cancelled",
+        "completed",
       ],
       delivery_method: ["within_town", "to_stage", "intertown"],
       delivery_status: [

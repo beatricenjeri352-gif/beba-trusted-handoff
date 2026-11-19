@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import DeliveryLocationPickerLoader from "@/components/delivery-location-picker-loader";
 
 function normalizePhone(value: string) {
   const digits = value.replace(/[^0-9]/g, "");
@@ -85,14 +86,22 @@ export default async function SenderPage({
     const weightValue = String(formData.get("weightKg") ?? "").trim();
     const weightKg = weightValue ? Number(weightValue) : null;
     const pickupLocation = String(formData.get("pickupLocation") ?? "").trim();
-    const pickupTown = String(formData.get("pickupTown") ?? "").trim();
+    const pickupLandmark = String(formData.get("pickupLandmark") ?? "").trim();
+    const pickupLatitude = String(formData.get("pickupLatitude") ?? "").trim();
+    const pickupLongitude = String(formData.get("pickupLongitude") ?? "").trim();
     const destinationLocation = String(formData.get("destinationLocation") ?? "").trim();
-    const destinationTown = String(formData.get("destinationTown") ?? "").trim();
+    const destinationLandmark = String(formData.get("destinationLandmark") ?? "").trim();
+    const destinationLatitude = String(formData.get("destinationLatitude") ?? "").trim();
+    const destinationLongitude = String(formData.get("destinationLongitude") ?? "").trim();
     const receiverName = String(formData.get("receiverName") ?? "").trim();
     const receiverPhone = String(formData.get("receiverPhone") ?? "").trim();
 
-    if (!parcelDescription || !pickupLocation || !pickupTown || !destinationLocation || !destinationTown) {
+    if (!parcelDescription || !pickupLocation || !destinationLocation) {
       redirect("/deliveries?error=delivery-required");
+    }
+
+    if (!pickupLatitude || !pickupLongitude || !destinationLatitude || !destinationLongitude) {
+      redirect("/deliveries?error=location-pin-required");
     }
 
     if (weightKg !== null && (!Number.isFinite(weightKg) || weightKg < 0)) {
@@ -129,7 +138,9 @@ export default async function SenderPage({
         sequence_number: 1,
         location_name: pickupLocation,
         address: pickupLocation,
-        town: pickupTown,
+        latitude: Number(pickupLatitude),
+        longitude: Number(pickupLongitude),
+        instructions: pickupLandmark || null,
       },
       {
         delivery_request_id: delivery.id,
@@ -137,7 +148,9 @@ export default async function SenderPage({
         sequence_number: 1,
         location_name: destinationLocation,
         address: destinationLocation,
-        town: destinationTown,
+        latitude: Number(destinationLatitude),
+        longitude: Number(destinationLongitude),
+        instructions: destinationLandmark || null,
         contact_name: receiverName || null,
         contact_phone: normalizedReceiverPhone,
       },
@@ -182,6 +195,8 @@ export default async function SenderPage({
         <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800" role="alert">
           {params.error === "delivery-required"
             ? "Complete the pickup, destination, and parcel fields."
+            : params.error === "location-pin-required"
+              ? "Pin both the pickup point and delivery destination on the map or use your current location."
             : params.error === "invalid-weight"
               ? "Enter a valid weight."
               : params.error === "invalid-receiver-phone"
@@ -224,27 +239,9 @@ export default async function SenderPage({
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="pickupLocation">Pickup location</label>
-              <input id="pickupLocation" name="pickupLocation" type="text" className="w-full rounded-xl border border-slate-300 px-4 py-3" required />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="pickupTown">Pickup town</label>
-              <input id="pickupTown" name="pickupTown" type="text" className="w-full rounded-xl border border-slate-300 px-4 py-3" required />
-            </div>
-          </div>
+          <DeliveryLocationPickerLoader name="pickup" label="Pickup location" locationName="" landmark="" />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="destinationLocation">Destination</label>
-              <input id="destinationLocation" name="destinationLocation" type="text" className="w-full rounded-xl border border-slate-300 px-4 py-3" required />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="destinationTown">Destination town</label>
-              <input id="destinationTown" name="destinationTown" type="text" className="w-full rounded-xl border border-slate-300 px-4 py-3" required />
-            </div>
-          </div>
+          <DeliveryLocationPickerLoader name="destination" label="Delivery destination" locationName="" landmark="" />
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
