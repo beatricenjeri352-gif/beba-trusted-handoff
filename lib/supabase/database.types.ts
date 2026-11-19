@@ -175,6 +175,130 @@ export type Database = {
           },
         ]
       }
+      delivery_assignments: {
+        Row: {
+          accepted_at: string | null
+          assignment_status: Database["public"]["Enums"]["assignment_status"]
+          carrier_user_id: string
+          completed_at: string | null
+          created_at: string
+          delivery_request_id: string
+          id: string
+          responded_at: string | null
+          selected_at: string
+          selected_by_user_id: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          assignment_status?: Database["public"]["Enums"]["assignment_status"]
+          carrier_user_id: string
+          completed_at?: string | null
+          created_at?: string
+          delivery_request_id: string
+          id?: string
+          responded_at?: string | null
+          selected_at?: string
+          selected_by_user_id: string
+        }
+        Update: {
+          accepted_at?: string | null
+          assignment_status?: Database["public"]["Enums"]["assignment_status"]
+          carrier_user_id?: string
+          completed_at?: string | null
+          created_at?: string
+          delivery_request_id?: string
+          id?: string
+          responded_at?: string | null
+          selected_at?: string
+          selected_by_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_assignments_carrier_user_id_fkey"
+            columns: ["carrier_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_assignments_delivery_request_id_fkey"
+            columns: ["delivery_request_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_assignments_selected_by_user_id_fkey"
+            columns: ["selected_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_quotes: {
+        Row: {
+          base_fee: number
+          created_at: string
+          currency: string
+          delivery_request_id: string
+          distance_charge: number
+          distance_km: number | null
+          id: string
+          parcel_charge: number
+          pricing_rule_id: string | null
+          quote_status: Database["public"]["Enums"]["delivery_quote_status"]
+          service_charge: number
+          total_amount: number
+          valid_until: string | null
+        }
+        Insert: {
+          base_fee: number
+          created_at?: string
+          currency?: string
+          delivery_request_id: string
+          distance_charge: number
+          distance_km?: number | null
+          id?: string
+          parcel_charge: number
+          pricing_rule_id?: string | null
+          quote_status?: Database["public"]["Enums"]["delivery_quote_status"]
+          service_charge: number
+          total_amount: number
+          valid_until?: string | null
+        }
+        Update: {
+          base_fee?: number
+          created_at?: string
+          currency?: string
+          delivery_request_id?: string
+          distance_charge?: number
+          distance_km?: number | null
+          id?: string
+          parcel_charge?: number
+          pricing_rule_id?: string | null
+          quote_status?: Database["public"]["Enums"]["delivery_quote_status"]
+          service_charge?: number
+          total_amount?: number
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_quotes_delivery_request_id_fkey"
+            columns: ["delivery_request_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_quotes_pricing_rule_id_fkey"
+            columns: ["pricing_rule_id"]
+            isOneToOne: false
+            referencedRelation: "pricing_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       delivery_requests: {
         Row: {
           accepted_quote_id: string | null
@@ -348,6 +472,126 @@ export type Database = {
           },
         ]
       }
+      price_adjustments: {
+        Row: {
+          adjustment_status: Database["public"]["Enums"]["price_adjustment_status"]
+          approved_by: string | null
+          carrier_agreed_at: string | null
+          created_at: string
+          delivery_request_id: string
+          id: string
+          original_amount: number
+          proposed_amount: number
+          reason: string
+          requested_by: string
+          sender_agreed_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          adjustment_status?: Database["public"]["Enums"]["price_adjustment_status"]
+          approved_by?: string | null
+          carrier_agreed_at?: string | null
+          created_at?: string
+          delivery_request_id: string
+          id?: string
+          original_amount: number
+          proposed_amount: number
+          reason: string
+          requested_by: string
+          sender_agreed_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          adjustment_status?: Database["public"]["Enums"]["price_adjustment_status"]
+          approved_by?: string | null
+          carrier_agreed_at?: string | null
+          created_at?: string
+          delivery_request_id?: string
+          id?: string
+          original_amount?: number
+          proposed_amount?: number
+          reason?: string
+          requested_by?: string
+          sender_agreed_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_adjustments_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "price_adjustments_delivery_request_id_fkey"
+            columns: ["delivery_request_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "price_adjustments_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pricing_rules: {
+        Row: {
+          base_fee: number
+          created_at: string
+          created_by: string | null
+          delivery_method: Database["public"]["Enums"]["delivery_method"]
+          distance_rate: number
+          effective_from: string
+          effective_until: string | null
+          id: string
+          parcel_size_rate: number
+          parcel_weight_rate: number
+          service_charge: number
+          status: string
+        }
+        Insert: {
+          base_fee: number
+          created_at?: string
+          created_by?: string | null
+          delivery_method: Database["public"]["Enums"]["delivery_method"]
+          distance_rate: number
+          effective_from?: string
+          effective_until?: string | null
+          id?: string
+          parcel_size_rate: number
+          parcel_weight_rate: number
+          service_charge?: number
+          status?: string
+        }
+        Update: {
+          base_fee?: number
+          created_at?: string
+          created_by?: string | null
+          delivery_method?: Database["public"]["Enums"]["delivery_method"]
+          distance_rate?: number
+          effective_from?: string
+          effective_until?: string | null
+          id?: string
+          parcel_size_rate?: number
+          parcel_weight_rate?: number
+          service_charge?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pricing_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           approved_at: string | null
@@ -428,7 +672,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_for_carrier: { Args: never; Returns: undefined }
+      calculate_delivery_quote: {
+        Args: { delivery_id: string }
+        Returns: string
+      }
       is_administrator: { Args: never; Returns: boolean }
+      respond_to_delivery_assignment: {
+        Args: {
+          assignment_id: string
+          response: Database["public"]["Enums"]["assignment_status"]
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       account_status: "active" | "suspended" | "deleted"
@@ -438,7 +694,14 @@ export type Database = {
         | "approved"
         | "rejected"
         | "suspended"
+      assignment_status:
+        | "pending_carrier_confirmation"
+        | "accepted"
+        | "declined"
+        | "cancelled"
+        | "completed"
       delivery_method: "within_town" | "to_stage" | "intertown"
+      delivery_quote_status: "estimated" | "confirmed" | "revised" | "expired"
       delivery_status:
         | "draft"
         | "awaiting_carrier"
@@ -456,6 +719,13 @@ export type Database = {
         | "disputed"
         | "returned"
       delivery_stop_type: "pickup" | "handover" | "destination"
+      price_adjustment_status:
+        | "requested"
+        | "sender_agreed"
+        | "carrier_agreed"
+        | "approved"
+        | "declined"
+        | "cancelled"
       role_status: "pending" | "approved" | "suspended" | "rejected"
       user_role_name: "sender" | "carrier" | "administrator"
       verification_status:
@@ -599,7 +869,15 @@ export const Constants = {
         "rejected",
         "suspended",
       ],
+      assignment_status: [
+        "pending_carrier_confirmation",
+        "accepted",
+        "declined",
+        "cancelled",
+        "completed",
+      ],
       delivery_method: ["within_town", "to_stage", "intertown"],
+      delivery_quote_status: ["estimated", "confirmed", "revised", "expired"],
       delivery_status: [
         "draft",
         "awaiting_carrier",
@@ -618,6 +896,14 @@ export const Constants = {
         "returned",
       ],
       delivery_stop_type: ["pickup", "handover", "destination"],
+      price_adjustment_status: [
+        "requested",
+        "sender_agreed",
+        "carrier_agreed",
+        "approved",
+        "declined",
+        "cancelled",
+      ],
       role_status: ["pending", "approved", "suspended", "rejected"],
       user_role_name: ["sender", "carrier", "administrator"],
       verification_status: [

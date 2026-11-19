@@ -1,4 +1,4 @@
-create type public.delivery_method as enum ('within_town', 'to_stage', 'intertown');
+@create type public.delivery_method as enum ('within_town', 'to_stage', 'intertown');
 create type public.delivery_status as enum (
   'draft',
   'awaiting_carrier',

@@ -127,17 +127,18 @@ The platform must not automatically assign or distribute delivery requests to co
 
 The commission formula is:
 
-**Commission = greater of 10% of the final approved delivery fee or KES 110.**
+**Commission = 10% of the final approved delivery fee.**
+
+There is no minimum commission.
 
 | Test ID | Delivery fee | Expected commission |
 |---|---:|---:|
-| PAY-001 | KES 300 | KES 110 |
-| PAY-002 | KES 500 | KES 110 |
-| PAY-003 | KES 1,000 | KES 110 |
-| PAY-004 | KES 1,100 | KES 110 |
-| PAY-005 | KES 1,500 | KES 150 |
-| PAY-006 | KES 2,000 | KES 200 |
-| PAY-007 | KES 5,000 | KES 500 |
+| PAY-001 | KES 50 | KES 5 |
+| PAY-002 | KES 100 | KES 10 |
+| PAY-003 | KES 150 | KES 15 |
+| PAY-004 | KES 250 | KES 25 |
+| PAY-005 | KES 500 | KES 50 |
+| PAY-006 | KES 1,000 | KES 100 |
 
 Additional tests:
 

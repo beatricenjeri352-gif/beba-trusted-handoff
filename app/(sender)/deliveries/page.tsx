@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import DeliveryLocationPickerLoader from "@/components/delivery-location-picker-loader";
 
 function normalizePhone(value: string) {
   const digits = value.replace(/[^0-9]/g, "");
@@ -13,7 +14,7 @@ function normalizePhone(value: string) {
 export default async function SenderPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; error?: string; tracking?: string }>;
+  searchParams: Promise<{ saved?: string; error?: string; tracking?: string; reason?: string }>;
 }) {
   const params = await searchParams;
   const supabase = await createSupabaseServerClient();
@@ -36,39 +37,6 @@ export default async function SenderPage({
     .order("created_at", { ascending: false })
     .limit(10);
 
-  async function saveProfile(formData: FormData) {
-    "use server";
-
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user: currentUser },
-    } = await supabase.auth.getUser();
-
-    if (!currentUser) redirect("/login");
-
-    const fullName = String(formData.get("fullName") ?? "").trim();
-    const phoneInput = String(formData.get("phoneNumber") ?? "").trim();
-    const phoneNumber = phoneInput ? normalizePhone(phoneInput) : null;
-
-    if (!fullName) redirect("/deliveries?error=fullname-required");
-    if (phoneInput && !phoneNumber) redirect("/deliveries?error=invalid-phone");
-
-    const { error } = await supabase.from("users").upsert(
-      {
-        id: currentUser.id,
-        full_name: fullName,
-        phone_number: phoneNumber,
-        email: currentUser.email ?? null,
-      },
-      { onConflict: "id" },
-    );
-
-    if (error) redirect("/deliveries?error=profile-save-failed");
-
-    revalidatePath("/deliveries");
-    redirect("/deliveries?saved=1");
-  }
-
   async function createDelivery(formData: FormData) {
     "use server";
 
@@ -85,14 +53,22 @@ export default async function SenderPage({
     const weightValue = String(formData.get("weightKg") ?? "").trim();
     const weightKg = weightValue ? Number(weightValue) : null;
     const pickupLocation = String(formData.get("pickupLocation") ?? "").trim();
-    const pickupTown = String(formData.get("pickupTown") ?? "").trim();
+    const pickupLandmark = String(formData.get("pickupLandmark") ?? "").trim();
+    const pickupLatitude = String(formData.get("pickupLatitude") ?? "").trim();
+    const pickupLongitude = String(formData.get("pickupLongitude") ?? "").trim();
     const destinationLocation = String(formData.get("destinationLocation") ?? "").trim();
-    const destinationTown = String(formData.get("destinationTown") ?? "").trim();
+    const destinationLandmark = String(formData.get("destinationLandmark") ?? "").trim();
+    const destinationLatitude = String(formData.get("destinationLatitude") ?? "").trim();
+    const destinationLongitude = String(formData.get("destinationLongitude") ?? "").trim();
     const receiverName = String(formData.get("receiverName") ?? "").trim();
     const receiverPhone = String(formData.get("receiverPhone") ?? "").trim();
 
-    if (!parcelDescription || !pickupLocation || !pickupTown || !destinationLocation || !destinationTown) {
+    if (!parcelDescription || !pickupLocation || !destinationLocation) {
       redirect("/deliveries?error=delivery-required");
+    }
+
+    if (!pickupLatitude || !pickupLongitude || !destinationLatitude || !destinationLongitude) {
+      redirect("/deliveries?error=location-pin-required");
     }
 
     if (weightKg !== null && (!Number.isFinite(weightKg) || weightKg < 0)) {
@@ -119,7 +95,9 @@ export default async function SenderPage({
       .single();
 
     if (deliveryError || !delivery) {
-      redirect("/deliveries?error=delivery-save-failed");
+      console.error("Delivery insert failed", deliveryError);
+      const reason = deliveryError?.code || "unknown";
+      redirect(`/deliveries?error=delivery-save-failed&reason=${encodeURIComponent(reason)}`);
     }
 
     const { error: stopsError } = await supabase.from("delivery_stops").insert([
@@ -129,7 +107,9 @@ export default async function SenderPage({
         sequence_number: 1,
         location_name: pickupLocation,
         address: pickupLocation,
-        town: pickupTown,
+        latitude: Number(pickupLatitude),
+        longitude: Number(pickupLongitude),
+        instructions: pickupLandmark || null,
       },
       {
         delivery_request_id: delivery.id,
@@ -137,15 +117,19 @@ export default async function SenderPage({
         sequence_number: 1,
         location_name: destinationLocation,
         address: destinationLocation,
-        town: destinationTown,
+        latitude: Number(destinationLatitude),
+        longitude: Number(destinationLongitude),
+        instructions: destinationLandmark || null,
         contact_name: receiverName || null,
         contact_phone: normalizedReceiverPhone,
       },
     ]);
 
     if (stopsError) {
+      console.error("Delivery stops insert failed", stopsError);
       await supabase.from("delivery_requests").delete().eq("id", delivery.id);
-      redirect("/deliveries?error=delivery-save-failed");
+      const reason = stopsError.code || "unknown";
+      redirect(`/deliveries?error=delivery-save-failed&reason=${encodeURIComponent(reason)}`);
     }
 
     revalidatePath("/deliveries");
@@ -182,6 +166,10 @@ export default async function SenderPage({
         <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800" role="alert">
           {params.error === "delivery-required"
             ? "Complete the pickup, destination, and parcel fields."
+            : params.reason
+              ? `The delivery could not be saved. Database code: ${params.reason}.`
+            : params.error === "location-pin-required"
+              ? "Pin both the pickup point and delivery destination on the map or use your current location."
             : params.error === "invalid-weight"
               ? "Enter a valid weight."
               : params.error === "invalid-receiver-phone"
@@ -224,27 +212,9 @@ export default async function SenderPage({
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="pickupLocation">Pickup location</label>
-              <input id="pickupLocation" name="pickupLocation" type="text" className="w-full rounded-xl border border-slate-300 px-4 py-3" required />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="pickupTown">Pickup town</label>
-              <input id="pickupTown" name="pickupTown" type="text" className="w-full rounded-xl border border-slate-300 px-4 py-3" required />
-            </div>
-          </div>
+          <DeliveryLocationPickerLoader name="pickup" label="Pickup location" locationName="" landmark="" />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="destinationLocation">Destination</label>
-              <input id="destinationLocation" name="destinationLocation" type="text" className="w-full rounded-xl border border-slate-300 px-4 py-3" required />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="destinationTown">Destination town</label>
-              <input id="destinationTown" name="destinationTown" type="text" className="w-full rounded-xl border border-slate-300 px-4 py-3" required />
-            </div>
-          </div>
+          <DeliveryLocationPickerLoader name="destination" label="Delivery destination" locationName="" landmark="" />
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>

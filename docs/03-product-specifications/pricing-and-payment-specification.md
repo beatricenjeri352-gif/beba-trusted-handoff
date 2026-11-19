@@ -16,22 +16,26 @@ The pricing and payment system must be transparent, consistent and protected aga
 
 ## 2. Pricing Model
 
-Beba will use a hybrid pricing model.
+Beba uses configurable distance pricing based on transport method.
 
-The delivery price will consider:
+The initial rules are:
 
-1. Distance between pickup and destination.
-2. Parcel size and weight.
-3. Delivery type.
-4. Additional service requirements, where applicable.
+1. Base fee: KES 50.
+2. Walking: KES 10 per kilometre.
+3. Bicycle: KES 20 per kilometre.
+4. Motorbike: KES 20 per kilometre.
+5. Car: KES 20 per kilometre.
+6. Minimum billable distance: 5 kilometres.
 
-The pricing engine should use configurable rates rather than fixed amounts hardcoded into the application.
+There is no automatic size, weight, traffic, waiting-time or special-handling surcharge.
 
-### 2.1 Proposed pricing formula
+### 2.1 Approved pricing formula
 
-**Delivery price = Base fee + Distance charge + Parcel charge + Applicable service charges**
+**Delivery price = Base fee + (Billable distance × Transport rate)**
 
-The exact rates will be configured after market research and pricing validation.
+**Billable distance = Maximum of actual route distance and 5 kilometres**
+
+Actual route distance remains visible separately and is never replaced by the billable minimum.
 
 ### 2.2 Distance calculation
 
@@ -41,15 +45,11 @@ For inter-town deliveries, Beba may use route-specific tariffs where these bette
 
 Straight-line distance should not be treated as the final delivery distance when road distance is required.
 
-### 2.3 Parcel pricing
+### 2.3 Parcel, weight and traffic treatment
 
-The pricing engine should support:
-- Parcel size.
-- Parcel weight.
-- Delivery type.
-- Special handling requirements, where applicable.
+The initial model does not add parcel-size, weight, traffic or special-handling surcharges automatically.
 
-The final parcel measurement rules and pricing bands remain to be confirmed.
+Any extra amount must be negotiated by the sender and carrier, described with a reason, agreed by both parties and approved within Beba before it becomes part of the final Beba price.
 
 ## 3. Price Visibility
 
@@ -105,23 +105,24 @@ The final payment methods and any in-app payment functionality remain subject to
 
 Beba earns commission from carriers for successfully completed deliveries.
 
-The agreed commission rule is:
+The approved commission rule is:
 
-**Beba commission = the greater of 10% of the final approved delivery fee or KES 110.**
+**Beba commission = 10% of the final approved Beba delivery price.**
 
-The commission is calculated using the final approved delivery fee, not the value of the parcel.
+There is no minimum commission.
+
+Private negotiated extras are excluded. An additional amount included and approved within Beba is added to the final Beba delivery price and included in commission.
 
 ### 6.1 Commission examples
 
-| Delivery fee | 10% calculation | Beba commission |
-|---:|---:|---:|
-| KES 300 | KES 30 | KES 110 |
-| KES 500 | KES 50 | KES 110 |
-| KES 1,000 | KES 100 | KES 110 |
-| KES 1,100 | KES 110 | KES 110 |
-| KES 1,500 | KES 150 | KES 150 |
-| KES 2,000 | KES 200 | KES 200 |
-| KES 5,000 | KES 500 | KES 500 |
+| Delivery fee | Beba commission |
+|---:|---:|
+| KES 50 | KES 5 |
+| KES 100 | KES 10 |
+| KES 150 | KES 15 |
+| KES 250 | KES 25 |
+| KES 500 | KES 50 |
+| KES 1,000 | KES 100 |
 
 The backend must calculate the commission automatically.
 
@@ -230,15 +231,12 @@ Pricing configuration should support future expansion to additional routes and d
 
 The following details must be finalised before production implementation:
 
-1. Exact base delivery fees.
-2. Distance pricing rates.
-3. Parcel size and weight categories.
-4. Pricing differences between local and inter-town deliveries.
-5. Quote validity period.
-6. Additional service charges.
-7. Payment timing options.
-8. Commission treatment for specific failed or cancelled delivery scenarios.
-9. M-Pesa integration and reconciliation approach.
+1. Pricing differences for future inter-town routes, if introduced.
+2. Quote validity period.
+3. Location-specific pricing rules, if introduced.
+4. Payment timing options.
+5. Commission treatment for failed or cancelled delivery scenarios.
+6. M-Pesa integration and reconciliation approach.
 
 These decisions should be validated through research and pilot testing rather than invented.
 
