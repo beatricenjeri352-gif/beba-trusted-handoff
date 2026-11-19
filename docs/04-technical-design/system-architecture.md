@@ -311,12 +311,7 @@ The backend must verify payment events. Screenshots or frontend claims must not 
 
 ### 8.2 Maps and distance services
 
-A mapping provider will be evaluated for:
-- Location search.
-- Map pin selection.
-- Road distance calculations.
-- Route estimates.
-- Navigation handoff.
+Leaflet and OpenStreetMap are used for location search and map pin selection. The server-side Google Maps Routes API is used for actual road-distance calculations. The API key must never be exposed to browser code.
 
 The pricing engine must use an approved distance method.
 
@@ -444,7 +439,8 @@ The following are candidates, not final selections.
 | Hosting | Vercel or equivalent | Frontend hosting |
 | Version control | GitHub | Code and documentation |
 | Payments | M-Pesa integration | Commission payments |
-| Mapping | Mapping provider to be selected | Location and distance |
+| Map search and pinning | Leaflet and OpenStreetMap | Location search and pin selection |
+| Road routing | Google Maps Routes API (server-side) | Actual road distance |
 | Notifications | SMS/email provider to be selected | User communication |
 
 The final stack should be selected based on security, cost, maintainability, integration needs and team capability.

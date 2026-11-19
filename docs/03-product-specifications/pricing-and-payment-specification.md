@@ -1,7 +1,7 @@
 # Beba – Pricing and Payment Specification
 
 **Version:** 1.0  
-**Status:** Proposed – Pending final pricing decisions  
+**Status:** Approved pricing model – Payment details remain pending
 **Purpose:** Define how delivery prices, carrier payments and Beba commissions will work.
 
 ## 1. Overview
@@ -27,6 +27,8 @@ The initial rules are:
 5. Car: KES 20 per kilometre.
 6. Minimum billable distance: 5 kilometres.
 
+The minimum billable distance remains fixed at 5 kilometres, and the approved commission remains fixed at 10%. Administrators can version the base fee and transport rates but cannot change either fixed rule.
+
 There is no automatic size, weight, traffic, waiting-time or special-handling surcharge.
 
 ### 2.1 Approved pricing formula
@@ -39,7 +41,7 @@ Actual route distance remains visible separately and is never replaced by the bi
 
 ### 2.2 Distance calculation
 
-For local deliveries, Beba should calculate the actual road distance between pickup and destination using a mapping service.
+For local deliveries, Beba calculates the actual road distance between pickup and destination using the server-side Google Maps Routes API.
 
 For inter-town deliveries, Beba may use route-specific tariffs where these better reflect actual transport costs.
 

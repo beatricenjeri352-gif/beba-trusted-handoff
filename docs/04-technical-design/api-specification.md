@@ -164,7 +164,9 @@ Pricing and commission calculations must take place on the backend.
 
 Current commission rule:
 
-**Beba commission = greater of 10% of the final approved delivery fee or KES 110.**
+**Beba commission = 10% of the final approved Beba delivery price.**
+
+There is no minimum commission. Private negotiated extras are excluded unless recorded and approved inside Beba.
 
 The backend must:
 - Calculate commission using the final approved delivery fee.

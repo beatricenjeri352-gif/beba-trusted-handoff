@@ -22,7 +22,7 @@ Active implementation flow:
 - Supabase PostgreSQL, Auth, RLS, and server actions
 - TypeScript and Tailwind CSS
 - Leaflet and OpenStreetMap for map pinning/search
-- OpenRouteService for future actual road-distance routing
+- Google Maps Routes API for server-side actual road-distance routing
 - Carrier application, discovery, selection, and assignment
 - Delivery creation with pickup/destination pins and landmarks
 - Configurable server-side delivery pricing and commission
@@ -63,10 +63,11 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
 
 - Core delivery creation, profile, map pinning, and location search are implemented.
 - Carrier application, carrier discovery, carrier selection, and assignment accept/decline are implemented.
-- The pure pricing engine and 18 acceptance tests are implemented.
-- Administrator pricing controls and negotiated-charge approval UI are implemented locally.
-- The 202611190003 approved pricing migration is prepared but must be reviewed and deployed explicitly.
-- Routing is deferred because OpenRouteService is unavailable and no API key is currently configured.
+- Carrier assignment read access and atomic selection are prepared in `202611190006_delivery_assignment_permissions.sql`; it has not been applied.
+- The pure pricing engine and 21 acceptance tests are implemented.
+- Administrator pricing controls and negotiated-charge approval UI are implemented locally; the approved 5 km minimum and 10% commission are fixed.
+- The 202611190003 pricing migration has been reviewed and updated locally; it has not been deployed.
+- Server-side Google Maps Routes API integration is implemented locally; live API access has not been tested.
 - No migration should be deployed without explicit user authorization.
 
 ## Database and Migration Rules
@@ -84,21 +85,22 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
 
 ## Routing State
 
-OpenRouteService integration must remain server-only.
+Google Maps Routes API integration must remain server-only.
 
 Required server environment variables:
 
 ```text
-OPENROUTESERVICE_API_KEY
+GOOGLE_MAPS_API_KEY
 SUPABASE_SERVICE_ROLE_KEY
 ```
 
 Do not add either secret to browser code or `NEXT_PUBLIC_*` variables.
 
-Until routing credentials and provider availability are confirmed:
+Before treating routing as production-ready, verify Google Maps Routes API access in the target environment.
 
-- Do not calculate an actual road distance.
-- Do not create misleading confirmed quotes.
+On provider or configuration failure:
+
+- Do not create a quote.
 - Return a clear routing/configuration error.
 - Do not fall back to straight-line distance.
 
@@ -138,12 +140,12 @@ Older documentation conflicts with the approved prompt:
 - Older KES 110 minimum commission text is superseded by 10% with no minimum.
 - Older parcel-size, weight, traffic, and service-charge pricing is superseded by no automatic surcharges.
 - Older hybrid formula text is superseded by the approved base-fee plus billable-distance formula.
-- The existing 202611190003 quote migration was a preliminary draft and must not be applied without review and replacement/approval.
+- The 202611190003 quote migration was a preliminary draft and has now been reviewed locally; hosted deployment still requires explicit user authorization.
 
 ## Outstanding Blockers
 
 - Supabase migration deployment requires renewed CLI authentication.
-- OpenRouteService API access is unavailable; routing credentials are pending.
+- Google Maps Routes API access and billing have not been verified in the target environment.
 - Failed/cancelled/disputed delivery commission policy timing needs later confirmation.
 - M-Pesa reconciliation is intentionally excluded until pricing and successful-delivery commission are complete.
 

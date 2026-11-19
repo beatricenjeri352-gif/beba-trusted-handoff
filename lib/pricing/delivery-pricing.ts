@@ -6,8 +6,6 @@ export interface PricingConfiguration {
   bicycleRateCentsPerKm: number;
   motorbikeRateCentsPerKm: number;
   carRateCentsPerKm: number;
-  minimumBillableDistanceMetres: number;
-  commissionPercent: number;
 }
 
 export interface DeliveryPriceCalculation {
@@ -27,13 +25,13 @@ const APPROVED_CONFIG: PricingConfiguration = {
   bicycleRateCentsPerKm: 2000,
   motorbikeRateCentsPerKm: 2000,
   carRateCentsPerKm: 2000,
-  minimumBillableDistanceMetres: 5000,
-  commissionPercent: 10,
 };
 
+const MINIMUM_BILLABLE_DISTANCE_METRES = 5000;
+
 function positiveInteger(value: number, fieldName: string): number {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error(`${fieldName} must be a non-negative safe integer`);
+  if (!Number.isSafeInteger(value) || value < 0 || value > 2147483647) {
+    throw new Error(`${fieldName} must be a non-negative database integer`);
   }
   return value;
 }
@@ -67,12 +65,21 @@ export function calculateDeliveryPrice(
   configuration: PricingConfiguration = APPROVED_CONFIG,
 ): DeliveryPriceCalculation {
   const actualMetres = positiveInteger(actualRouteDistanceMetres, "actual route distance in metres");
-  const minimumMetres = positiveInteger(configuration.minimumBillableDistanceMetres, "minimum billable distance");
+  const minimumMetres = MINIMUM_BILLABLE_DISTANCE_METRES;
   const billableMetres = Math.max(actualMetres, minimumMetres);
-  const rateCentsPerKm = getDistanceRateCentsPerKm(transportMethod, configuration);
+  const rateCentsPerKm = positiveInteger(
+    getDistanceRateCentsPerKm(transportMethod, configuration),
+    "distance rate",
+  );
 
   const baseFeeCents = positiveInteger(configuration.baseFeeCents, "base fee");
-  const distanceChargeCents = Math.floor((billableMetres * rateCentsPerKm + 500) / 1000);
+  const distanceChargeNumerator = billableMetres * rateCentsPerKm + 500;
+  if (!Number.isSafeInteger(distanceChargeNumerator)) {
+    throw new Error("Distance charge exceeds the supported calculation range");
+  }
+  const distanceChargeCents = Math.floor(distanceChargeNumerator / 1000);
+  const deliveryPriceCents = baseFeeCents + distanceChargeCents;
+  positiveInteger(deliveryPriceCents, "delivery price");
 
   return {
     actualRouteDistanceMetres: actualMetres,
@@ -82,17 +89,12 @@ export function calculateDeliveryPrice(
     baseFeeCents,
     distanceRateCentsPerKm: rateCentsPerKm,
     distanceChargeCents,
-    deliveryPriceCents: baseFeeCents + distanceChargeCents,
+    deliveryPriceCents,
   };
 }
 
-export function calculateCommissionCents(finalAgreedPriceCents: number, commissionPercent = 10): number {
+export function calculateCommissionCents(finalAgreedPriceCents: number): number {
   positiveInteger(finalAgreedPriceCents, "final agreed price");
 
-  if (!Number.isFinite(commissionPercent) || commissionPercent < 0 || commissionPercent > 100) {
-    throw new Error("Commission percentage must be between 0 and 100");
-  }
-
-  const commissionPercentHundredths = Math.round(commissionPercent * 100);
-  return Math.floor((finalAgreedPriceCents * commissionPercentHundredths + 5000) / 10000);
+  return Math.floor((finalAgreedPriceCents * 1000 + 5000) / 10000);
 }

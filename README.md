@@ -192,49 +192,55 @@ The exact contact method — direct phone, in-app messaging or both — remains 
 
 ## 10. Delivery pricing
 
-Beba will use a hybrid pricing model.
+Beba's approved initial pricing model is distance-based.
 
-The calculation should consider:
+The initial rules are:
 
-- Delivery distance.
-- Parcel size.
-- Parcel weight.
-- Delivery method.
-- Additional approved service charges where applicable.
+- Base fee: KES 50.
+- Minimum billable distance: 5 km.
+- Walking: KES 10 per billable kilometre.
+- Bicycle: KES 20 per billable kilometre.
+- Motorbike: KES 20 per billable kilometre.
+- Car: KES 20 per billable kilometre.
 
-The proposed pricing structure is:
+**Billable distance = maximum of actual route distance and 5 km.**
 
-**Delivery price = Base fee + Distance charge + Parcel charge + Applicable service charges**
+**Delivery price = KES 50 + (Billable distance × transport rate).**
 
 Requirements:
 
-- Rates must be configurable.
+- Administrators may version the base fee and transport rates; the 5 km minimum is fixed.
 - The backend must calculate the price.
 - The frontend must not be allowed to alter confirmed prices directly.
 - Pricing information must be visible to relevant parties.
 - Estimates and confirmed prices must be distinguishable.
-- Price changes require Beba approval and agreement from both sender and carrier.
+- No automatic parcel-size, weight, traffic, waiting-time or special-handling surcharge is added.
+- Additional charges require a reason, carrier proposal, sender agreement and Beba administrator approval.
+- Private negotiated extras are excluded from Beba commission; approved in-app additions are included in the final Beba price.
 - Original and revised prices, reasons and approvals must be recorded.
 
-Actual tariffs, parcel limits, quote validity and inter-town pricing rules remain outstanding.
+Actual road distance is obtained server-side from Google Maps Routes API; straight-line distance must not be used as a fallback. Quote validity and future inter-town tariffs remain outstanding.
 
 ## 11. Commission and revenue model
 
 Beba earns a commission from the carrier.
 
-The agreed calculation is:
+The approved calculation is:
 
-**Commission = Greater of 10% of the delivery fee or KES 110.**
+**Commission = 10% of the final approved Beba delivery price.**
 
 Examples:
 
 | Delivery fee | Commission |
 |---:|---:|
-| KES 500 | KES 110 |
-| KES 1,000 | KES 110 |
-| KES 1,500 | KES 150 |
-| KES 2,000 | KES 200 |
-| KES 5,000 | KES 500 |
+| KES 50 | KES 5 |
+| KES 100 | KES 10 |
+| KES 150 | KES 15 |
+| KES 250 | KES 25 |
+| KES 500 | KES 50 |
+| KES 1,000 | KES 100 |
+
+There is no minimum commission.
 
 Requirements:
 
@@ -548,7 +554,6 @@ The following are not yet final:
 
 - Initial pilot city or town.
 - Carrier contact method.
-- Actual pricing rates.
 - Parcel size and weight limits.
 - Quote validity period.
 - Inter-town tariff model.

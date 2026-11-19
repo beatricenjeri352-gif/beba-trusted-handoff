@@ -382,46 +382,55 @@ Pickup confirmation and receiver confirmation must remain distinct.
 
 ## 11. Pricing and quotes
 
-### 11.1 `pricing_rules`
+### 11.1 `pricing_configurations`
 
-Stores configurable pricing parameters.
+Stores versioned server-controlled pricing parameters.
 
-Proposed fields:
+Fields include:
 
 - id
-- delivery_method
-- base_fee
-- distance_rate
-- parcel_size_rate
-- parcel_weight_rate
-- service_charge
+- name
+- base_fee_cents
+- walking_rate_cents_per_km
+- bicycle_rate_cents_per_km
+- motorbike_rate_cents_per_km
+- car_rate_cents_per_km
+- minimum_billable_distance_metres
+- commission_percent_hundredths
+- status
 - effective_from
 - effective_until
-- status
-- created_by
+- changed_by
 - created_at
 
-The exact fields may change when the pricing formula is finalised.
-
-Pricing rules must be configurable without changing frontend code.
+The minimum billable distance is fixed at 5,000 metres and commission is fixed at 1,000 hundredths of a percent (10%). Administrators may version the base fee and transport rates, but cannot change these approved rules.
 
 ### 11.2 `delivery_quotes`
 
-Stores price calculations for individual delivery requests.
+Stores immutable price calculations for individual delivery requests.
 
-Proposed fields:
+Fields include:
 
 - id
 - delivery_request_id
-- pricing_rule_id
-- base_fee
-- distance_charge
-- parcel_charge
-- service_charge
-- total_amount
+- pricing_configuration_id
+- transport_method
+- actual_route_distance_metres
+- minimum_billable_distance_metres
+- billable_distance_metres
+- base_fee_cents
+- distance_rate_cents_per_km
+- distance_charge_cents
+- original_calculated_price_cents
+- final_agreed_price_cents
 - currency
+- commission_percent_hundredths
+- commission_amount_cents
+- route_provider
+- route_reference
 - quote_status
 - valid_until
+- confirmed_at
 - created_at
 
 Quotes must distinguish estimated prices from confirmed prices.
@@ -460,17 +469,19 @@ Proposed fields:
 - id
 - delivery_request_id
 - carrier_user_id
-- delivery_fee
-- commission_rate
-- minimum_commission
-- commission_amount
-- commission_status
-- calculated_at
+- delivery_quote_id
+- final_agreed_price_cents
+- commission_percent_hundredths
+- commission_amount_cents
+- calculation_basis
+- status
 - created_at
 
 The agreed formula is:
 
-`Commission = MAX(10% × final approved delivery fee, KES 110)`
+`Commission = 10% × final approved Beba delivery price`
+
+There is no minimum commission. Private negotiated extras are excluded unless recorded and approved inside Beba.
 
 The backend must calculate the amount.
 

@@ -269,7 +269,8 @@ It translates product requirements into practical workflows that guide interface
 
 **Important rules:**
 - Commission uses the final approved delivery fee.
-- Commission is the greater of 10% or KES 110.
+- Commission is 10% of the final approved Beba delivery price.
+- There is no minimum commission.
 - Payment screenshots alone are not authoritative where transaction verification is available.
 - Failed or cancelled deliveries follow separate rules.
 
