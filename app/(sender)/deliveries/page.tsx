@@ -14,7 +14,7 @@ function normalizePhone(value: string) {
 export default async function SenderPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; error?: string; tracking?: string }>;
+  searchParams: Promise<{ saved?: string; error?: string; tracking?: string; reason?: string }>;
 }) {
   const params = await searchParams;
   const supabase = await createSupabaseServerClient();
@@ -36,39 +36,6 @@ export default async function SenderPage({
     .eq("sender_user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(10);
-
-  async function saveProfile(formData: FormData) {
-    "use server";
-
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user: currentUser },
-    } = await supabase.auth.getUser();
-
-    if (!currentUser) redirect("/login");
-
-    const fullName = String(formData.get("fullName") ?? "").trim();
-    const phoneInput = String(formData.get("phoneNumber") ?? "").trim();
-    const phoneNumber = phoneInput ? normalizePhone(phoneInput) : null;
-
-    if (!fullName) redirect("/deliveries?error=fullname-required");
-    if (phoneInput && !phoneNumber) redirect("/deliveries?error=invalid-phone");
-
-    const { error } = await supabase.from("users").upsert(
-      {
-        id: currentUser.id,
-        full_name: fullName,
-        phone_number: phoneNumber,
-        email: currentUser.email ?? null,
-      },
-      { onConflict: "id" },
-    );
-
-    if (error) redirect("/deliveries?error=profile-save-failed");
-
-    revalidatePath("/deliveries");
-    redirect("/deliveries?saved=1");
-  }
 
   async function createDelivery(formData: FormData) {
     "use server";
@@ -128,7 +95,9 @@ export default async function SenderPage({
       .single();
 
     if (deliveryError || !delivery) {
-      redirect("/deliveries?error=delivery-save-failed");
+      console.error("Delivery insert failed", deliveryError);
+      const reason = deliveryError?.code || "unknown";
+      redirect(`/deliveries?error=delivery-save-failed&reason=${encodeURIComponent(reason)}`);
     }
 
     const { error: stopsError } = await supabase.from("delivery_stops").insert([
@@ -157,8 +126,10 @@ export default async function SenderPage({
     ]);
 
     if (stopsError) {
+      console.error("Delivery stops insert failed", stopsError);
       await supabase.from("delivery_requests").delete().eq("id", delivery.id);
-      redirect("/deliveries?error=delivery-save-failed");
+      const reason = stopsError.code || "unknown";
+      redirect(`/deliveries?error=delivery-save-failed&reason=${encodeURIComponent(reason)}`);
     }
 
     revalidatePath("/deliveries");
@@ -195,6 +166,8 @@ export default async function SenderPage({
         <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800" role="alert">
           {params.error === "delivery-required"
             ? "Complete the pickup, destination, and parcel fields."
+            : params.reason
+              ? `The delivery could not be saved. Database code: ${params.reason}.`
             : params.error === "location-pin-required"
               ? "Pin both the pickup point and delivery destination on the map or use your current location."
             : params.error === "invalid-weight"

@@ -65,44 +65,46 @@ Beba should not automatically rank or assign carriers.
 
 ## 5. Pricing model
 
-**Agreed approach: Hybrid pricing.**
+**Agreed approach: Configurable distance pricing.**
 
-The delivery price should consider:
+The initial delivery price uses:
 
-- Distance.
-- Parcel size.
-- Parcel weight.
-- Delivery method.
-- Additional approved service charges where applicable.
+- KES 50 base fee.
+- Actual route distance.
+- A 5 km minimum billable distance.
+- Walking: KES 10 per billable kilometre.
+- Bicycle: KES 20 per billable kilometre.
+- Motorbike: KES 20 per billable kilometre.
+- Car: KES 20 per billable kilometre.
 
-The pricing engine should calculate prices using configurable rates rather than fixed values embedded in the application code.
+No automatic size, weight, traffic, waiting-time or special-handling surcharge is added.
 
 **Price visibility:** Relevant pricing information should be visible to all parties.
 
-**Price adjustments:** Changes require Beba approval and agreement from both sender and carrier. Original and revised prices must be recorded, including the reason for the change.
-
-Actual tariffs and calculation rules remain outstanding.
+**Price adjustments:** Additional charges require a reason, sender and carrier agreement, and Beba approval. Original and revised prices must remain auditable.
 
 ## 6. Beba commission
 
-The agreed commission is the greater of:
-
-- 10% of the delivery fee; or
-- KES 110.
+The agreed commission is 10% of the final delivery amount recorded and agreed within Beba.
 
 Formula:
 
-`Commission = MAX(10% × delivery fee, KES 110)`
+`Commission = 10% × final agreed Beba delivery price`
+
+There is no minimum commission.
 
 Examples:
 
 | Delivery fee | Beba commission |
 |---:|---:|
-| KES 500 | KES 110 |
-| KES 1,000 | KES 110 |
-| KES 1,500 | KES 150 |
-| KES 2,000 | KES 200 |
-| KES 5,000 | KES 500 |
+| KES 50 | KES 5 |
+| KES 100 | KES 10 |
+| KES 150 | KES 15 |
+| KES 250 | KES 25 |
+| KES 500 | KES 50 |
+| KES 1,000 | KES 100 |
+
+Private negotiated extras are excluded. Additional payments agreed and recorded in Beba are included.
 
 - Commission is paid by the carrier to Beba's designated Till.
 - Commission becomes payable after successful delivery confirmation.

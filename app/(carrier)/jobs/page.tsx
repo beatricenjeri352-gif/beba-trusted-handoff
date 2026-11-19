@@ -3,6 +3,30 @@ import { redirect } from "next/navigation";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+interface AssignmentRow {
+  id: string;
+  delivery_request_id: string;
+  assignment_status: string;
+  delivery_requests?: { tracking_number?: string; parcel_description?: string; current_status?: string } | null;
+}
+
+interface QuoteRow {
+  id: string;
+  delivery_request_id: string;
+  final_agreed_price_cents: number;
+  quote_status: string;
+}
+
+interface ChargeRow {
+  id: string;
+  delivery_request_id: string;
+  proposed_amount_cents: number;
+  reason: string;
+  sender_agreed_at: string | null;
+  carrier_agreed_at: string | null;
+  status: string;
+}
+
 export default async function CarrierPage({
   searchParams,
 }: {
@@ -72,11 +96,13 @@ export default async function CarrierPage({
     redirect("/jobs?saved=1");
   }
 
-  const { data: assignments } = await (supabase as any)
+  const { data: assignmentsRaw } = await supabase
     .from("delivery_assignments")
     .select("id, delivery_request_id, assignment_status, delivery_requests(tracking_number, parcel_description, current_status)")
     .eq("carrier_user_id", user.id)
     .order("selected_at", { ascending: false });
+
+  const assignments = (assignmentsRaw ?? []) as unknown as AssignmentRow[];
 
   async function respondToAssignment(formData: FormData) {
     "use server";
@@ -95,7 +121,7 @@ export default async function CarrierPage({
       redirect("/jobs?error=invalid-response");
     }
 
-    const { error } = await (supabase as any).rpc("respond_to_delivery_assignment", {
+    const { error } = await supabase.rpc("respond_to_delivery_assignment", {
       assignment_id: assignmentId,
       response,
     });
@@ -104,6 +130,87 @@ export default async function CarrierPage({
 
     revalidatePath("/jobs");
     redirect("/jobs?saved=assignment-response");
+  }
+
+  const deliveryIds = assignments.map((assignment) => assignment.delivery_request_id);
+
+  const { data: quoteRowsRaw } = deliveryIds.length
+    ? await supabase
+        .from("delivery_quotes")
+        .select("id, delivery_request_id, final_agreed_price_cents, quote_status")
+        .in("delivery_request_id", deliveryIds)
+        .order("created_at", { ascending: false })
+    : { data: [] };
+
+  const quoteRows = (quoteRowsRaw ?? []) as unknown as QuoteRow[];
+  const quoteByDelivery = new Map<string, QuoteRow>();
+  for (const quote of quoteRows) {
+    if (!quoteByDelivery.has(quote.delivery_request_id)) quoteByDelivery.set(quote.delivery_request_id, quote);
+  }
+
+  const { data: chargeRowsRaw } = deliveryIds.length
+    ? await supabase
+        .from("negotiated_charges")
+        .select("id, delivery_request_id, proposed_amount_cents, reason, sender_agreed_at, carrier_agreed_at, status")
+        .in("delivery_request_id", deliveryIds)
+        .order("created_at", { ascending: false })
+    : { data: [] };
+
+  const chargeRows = (chargeRowsRaw ?? []) as unknown as ChargeRow[];
+
+  async function proposeAdditionalCharge(formData: FormData) {
+    "use server";
+
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+
+    if (!currentUser) redirect("/jobs?error=authentication-required");
+
+    const deliveryId = String(formData.get("deliveryId") ?? "");
+    const quoteId = String(formData.get("quoteId") ?? "");
+    const amountKes = Number(String(formData.get("amount") ?? ""));
+    const reason = String(formData.get("reason") ?? "").trim();
+
+    if (!deliveryId || !quoteId || !Number.isFinite(amountKes) || amountKes < 0 || !reason) {
+      redirect("/jobs?error=charge-required");
+    }
+
+    const { error } = await supabase.rpc("carrier_propose_negotiated_charge", {
+      delivery_id: deliveryId,
+      quote_id: quoteId,
+      proposed_amount_cents: Math.round(amountKes * 100),
+      reason,
+    });
+
+    if (error) redirect("/jobs?error=charge-proposal-failed");
+
+    revalidatePath("/jobs");
+    redirect("/jobs?saved=charge-proposed");
+  }
+
+  async function agreeToAdditionalCharge(formData: FormData) {
+    "use server";
+
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+
+    if (!currentUser) redirect("/login");
+
+    const chargeId = String(formData.get("chargeId") ?? "");
+    if (!chargeId) redirect("/jobs?error=charge-required");
+
+    const { error } = await supabase.rpc("carrier_agree_negotiated_charge", {
+      charge_id: chargeId,
+    });
+
+    if (error) redirect("/jobs?error=charge-agreement-failed");
+
+    revalidatePath("/jobs");
+    redirect("/jobs?saved=charge-agreed");
   }
 
   const applicationStatus = profile?.approval_status?.replaceAll("_", " ") ?? "Not applied";
@@ -135,7 +242,7 @@ export default async function CarrierPage({
       <section className="mt-6">
         <h2 className="text-xl font-bold">Delivery assignments</h2>
         <div className="mt-3 space-y-3">
-          {assignments?.length ? assignments.map((assignment: any) => (
+          {assignments.length ? assignments.map((assignment) => (
             <article key={assignment.id} className="rounded-2xl border border-slate-200 p-5">
               <p className="font-bold">{assignment.delivery_requests?.tracking_number || "Delivery request"}</p>
               <p className="mt-1 text-sm text-slate-600">{assignment.delivery_requests?.parcel_description}</p>
@@ -153,6 +260,48 @@ export default async function CarrierPage({
                     <input type="hidden" name="response" value="declined" />
                     <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Decline</button>
                   </form>
+                </div>
+              ) : null}
+
+              {assignment.assignment_status === "accepted" ? (
+                <div className="mt-4 rounded-xl border border-slate-200 p-4">
+                  {(() => {
+                    const quote = quoteByDelivery.get(assignment.delivery_request_id);
+                    if (!quote) {
+                      return <p className="text-sm text-slate-600">A delivery quote must exist before an additional charge can be proposed.</p>;
+                    }
+
+                    return (
+                      <form action={proposeAdditionalCharge} className="grid gap-3 sm:grid-cols-[120px_1fr]">
+                        <input type="hidden" name="deliveryId" value={assignment.delivery_request_id} />
+                        <input type="hidden" name="quoteId" value={quote.id} />
+                        <div>
+                          <label className="mb-2 block text-sm font-medium" htmlFor={`chargeAmount-${assignment.id}`}>Extra amount (KES)</label>
+                          <input id={`chargeAmount-${assignment.id}`} name="amount" type="number" min="0" step="0.01" className="w-full rounded-xl border border-slate-300 px-3 py-2" />
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-sm font-medium" htmlFor={`chargeReason-${assignment.id}`}>Reason</label>
+                          <input id={`chargeReason-${assignment.id}`} name="reason" type="text" placeholder="Waiting time, special handling, or approved extra" className="w-full rounded-xl border border-slate-300 px-3 py-2" />
+                        </div>
+                        <button className="sm:col-span-2 rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Propose additional charge</button>
+                      </form>
+                    );
+                  })()}
+
+                  {chargeRows.filter((charge) => charge.delivery_request_id === assignment.delivery_request_id).map((charge) => (
+                    <article key={charge.id} className="mt-3 rounded-lg bg-slate-50 p-3">
+                      <p className="font-semibold">KES {(Number(charge.proposed_amount_cents) / 100).toFixed(2)}</p>
+                      <p className="text-sm text-slate-600">{charge.reason}</p>
+                      {!charge.carrier_agreed_at ? (
+                        <form action={agreeToAdditionalCharge} className="mt-2">
+                          <input type="hidden" name="chargeId" value={charge.id} />
+                          <button className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Agree to this charge</button>
+                        </form>
+                      ) : (
+                        <p className="mt-2 text-xs text-emerald-700">Carrier agreement recorded</p>
+                      )}
+                    </article>
+                  ))}
                 </div>
               ) : null}
             </article>
