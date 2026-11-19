@@ -26,6 +26,12 @@ for (const testCase of cases) {
   });
 }
 
+test("weight, traffic and parcel size add no automatic surcharge", () => {
+  const quote = calculateDeliveryPrice("walking", 5000);
+  assert.equal(quote.deliveryPriceCents, 10000);
+  assert.equal(quote.distanceChargeCents, 5000);
+});
+
 test("minimum billable distance is 5 km", () => {
   const quote = calculateDeliveryPrice("walking", 2000);
   assert.equal(quote.actualRouteDistanceMetres, 2000);
@@ -42,22 +48,30 @@ for (const [priceCents, commissionCents] of [
   [100000, 10000],
 ]) {
   test(`KES ${priceCents / 100} produces KES ${commissionCents / 100} commission`, () => {
-    assert.equal(calculateCommissionCents(priceCents, 10), commissionCents);
+    assert.equal(calculateCommissionCents(priceCents), commissionCents);
   });
 }
 
+test("small prices have no minimum commission", () => {
+  assert.equal(calculateCommissionCents(50), 5);
+});
+
+test("prices outside the database integer range are rejected", () => {
+  assert.throws(() => calculateDeliveryPrice("car", 2147483647), /database integer/);
+});
+
 test("private negotiated extras are excluded", () => {
   const originalCents = calculateDeliveryPrice("walking", 5000).deliveryPriceCents;
-  assert.equal(calculateCommissionCents(originalCents, 10), 1000);
+  assert.equal(calculateCommissionCents(originalCents), 1000);
 });
 
 test("in-app negotiated extras are included in final commission", () => {
   const originalCents = calculateDeliveryPrice("walking", 5000).deliveryPriceCents;
   const privateExtraCents = 3000;
-  assert.equal(calculateCommissionCents(originalCents, 10), 1000);
+  assert.equal(calculateCommissionCents(originalCents), 1000);
 
   const recordedFinalCents = originalCents + privateExtraCents;
-  assert.equal(calculateCommissionCents(recordedFinalCents, 10), 1300);
+  assert.equal(calculateCommissionCents(recordedFinalCents), 1300);
 });
 
 test("legacy motorcycle profile maps to motorbike transport", () => {

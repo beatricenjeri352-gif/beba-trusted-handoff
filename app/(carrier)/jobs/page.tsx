@@ -30,7 +30,7 @@ interface ChargeRow {
 export default async function CarrierPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; error?: string }>;
+  searchParams: Promise<{ saved?: string; error?: string; reason?: string }>;
 }) {
   const params = await searchParams;
   const supabase = await createSupabaseServerClient();
@@ -87,10 +87,16 @@ export default async function CarrierPage({
       { onConflict: "user_id" },
     );
 
-    if (profileError) redirect("/jobs?error=application-save-failed");
+    if (profileError) {
+      console.error("Carrier profile save failed", profileError);
+      redirect(`/jobs?error=application-save-failed&reason=${encodeURIComponent(profileError.code || "unknown")}`);
+    }
 
     const { error: roleError } = await supabase.rpc("apply_for_carrier");
-    if (roleError) redirect("/jobs?error=role-save-failed");
+    if (roleError) {
+      console.error("Carrier role update failed", roleError);
+      redirect(`/jobs?error=role-save-failed&reason=${encodeURIComponent(roleError.code || "unknown")}`);
+    }
 
     revalidatePath("/jobs");
     redirect("/jobs?saved=1");
@@ -235,7 +241,9 @@ export default async function CarrierPage({
         <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800" role="alert">
           {params.error === "required-fields"
             ? "Complete the carrier type, operating towns, delivery methods, and profile description."
-            : "The carrier application could not be saved. Please try again."}
+            : params.reason
+              ? `The carrier application could not be saved. Database code: ${params.reason}.`
+              : "The carrier application could not be saved. Please try again."}
         </p>
       ) : null}
 

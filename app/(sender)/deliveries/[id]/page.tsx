@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getActualRouteDistanceMetres } from "@/lib/pricing/openrouteservice";
+import { getActualRouteDistanceMetres } from "@/lib/pricing/google-maps";
 import { normalizeTransportMethod } from "@/lib/pricing/delivery-pricing";
 
 interface AssignmentRow {
@@ -83,6 +83,7 @@ export default async function DeliveryDetailPage({
     .select("id, transport_method, actual_route_distance_metres, minimum_billable_distance_metres, billable_distance_metres, base_fee_cents, distance_rate_cents_per_km, distance_charge_cents, original_calculated_price_cents, final_agreed_price_cents, currency, commission_percent_hundredths, commission_amount_cents, quote_status, valid_until, created_at")
     .eq("delivery_request_id", delivery.id)
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -159,8 +160,10 @@ export default async function DeliveryDetailPage({
         { latitude: Number(destination.latitude), longitude: Number(destination.longitude) },
       );
     } catch (error) {
-      const code = error instanceof Error ? error.message : "ROUTE_DISTANCE_NOT_AVAILABLE";
-      redirect(`/deliveries/${id}?error=${encodeURIComponent(code)}`);
+      const code = error instanceof Error && error.message === "ROUTING_PROVIDER_NOT_CONFIGURED"
+        ? error.message
+        : "ROUTE_DISTANCE_NOT_AVAILABLE";
+      redirect(`/deliveries/${id}?error=${code}`);
     }
 
     let admin;
@@ -201,9 +204,13 @@ export default async function DeliveryDetailPage({
     const { error } = await supabase.rpc("confirm_delivery_quote", {
       delivery_id: id,
       quote_id: latestQuote.id,
+      expected_final_price_cents: latestQuote.final_agreed_price_cents,
     });
 
-    if (error) redirect(`/deliveries/${id}?error=quote-confirmation-failed`);
+    if (error) {
+      console.error("Delivery quote confirmation failed", error);
+      redirect(`/deliveries/${id}?error=quote-confirmation-failed`);
+    }
 
     revalidatePath(`/deliveries/${id}`);
     redirect(`/deliveries/${id}?saved=quote-confirmed`);
@@ -245,44 +252,15 @@ export default async function DeliveryDetailPage({
     const carrierUserId = String(formData.get("carrierUserId") ?? "");
     if (!carrierUserId) redirect(`/deliveries/${id}?error=carrier-required`);
 
-    const { data: ownedDelivery } = await supabase
-      .from("delivery_requests")
-      .select("id, current_status")
-      .eq("id", id)
-      .eq("sender_user_id", currentUser.id)
-      .maybeSingle();
+    const { error } = await supabase.rpc("select_delivery_carrier", {
+      p_delivery_id: id,
+      p_carrier_user_id: carrierUserId,
+    });
 
-    if (!ownedDelivery || ownedDelivery.current_status !== "draft") {
-      redirect(`/deliveries/${id}?error=carrier-selection-unavailable`);
+    if (error) {
+      console.error("Carrier assignment selection failed", error);
+      redirect(`/deliveries/${id}?error=assignment-failed`);
     }
-
-    const { data: carrier } = await supabase
-      .from("carrier_profiles")
-      .select("user_id")
-      .eq("user_id", carrierUserId)
-      .eq("approval_status", "approved")
-      .eq("active_status", true)
-      .maybeSingle();
-
-    if (!carrier) redirect(`/deliveries/${id}?error=carrier-unavailable`);
-
-    const { error: assignmentError } = await supabase
-      .from("delivery_assignments")
-      .insert({
-        delivery_request_id: id,
-        carrier_user_id: carrierUserId,
-        selected_by_user_id: currentUser.id,
-        assignment_status: "pending_carrier_confirmation",
-      });
-
-    if (assignmentError) redirect(`/deliveries/${id}?error=assignment-failed`);
-
-    await supabase
-      .from("delivery_requests")
-      .update({ current_status: "carrier_selected" })
-      .eq("id", id)
-      .eq("sender_user_id", currentUser.id)
-      .eq("current_status", "draft");
 
     revalidatePath(`/deliveries/${id}`);
     redirect(`/deliveries/${id}?saved=carrier-selected`);
@@ -312,13 +290,13 @@ export default async function DeliveryDetailPage({
               : query.error === "unsupported-transport-method"
                 ? "The carrier transport method is not supported by the approved pricing rules."
                 : query.error === "ROUTING_PROVIDER_NOT_CONFIGURED"
-                  ? "Route distance is unavailable until the OpenRouteService key is configured on the server."
+                  ? "Route distance is unavailable until the Google Maps key is configured on the server."
                   : query.error === "ROUTE_DISTANCE_NOT_AVAILABLE"
                     ? "A road route could not be obtained. No price was created."
                     : query.error === "SUPABASE_SERVICE_ROLE_NOT_CONFIGURED"
                       ? "The server pricing service is not configured."
                       : query.error === "quote-unavailable"
-                        ? "A price estimate is unavailable because no active pricing configuration exists."
+                        ? "A price estimate could not be created. Confirm the carrier, route, and pricing are still available."
                         : "The quote could not be created."}
           </p>
         ) : null}
@@ -363,12 +341,14 @@ export default async function DeliveryDetailPage({
               <p className="text-xs text-slate-500">Minimum billable distance: {(Number(latestQuote.minimum_billable_distance_metres) / 1000).toFixed(3)} km</p>
               <p className="text-xs text-slate-500">Billable distance: {(Number(latestQuote.billable_distance_metres) / 1000).toFixed(3)} km</p>
               {latestQuote.valid_until ? <p className="text-xs text-slate-500">Valid until {new Date(latestQuote.valid_until).toLocaleString()}</p> : null}
-              {latestQuote.quote_status !== "confirmed" && latestQuote.quote_status !== "revised" ? (
+              {latestQuote.quote_status === "estimated" || latestQuote.quote_status === "revised" ? (
                 <form action={confirmQuote} className="mt-3">
                   <button className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Confirm this quote</button>
                 </form>
-              ) : (
+              ) : latestQuote.quote_status === "confirmed" ? (
                 <p className="mt-3 text-sm font-semibold text-emerald-700">Quote confirmed: KES {(Number(latestQuote.final_agreed_price_cents) / 100).toFixed(2)}</p>
+              ) : (
+                <p className="mt-3 text-sm font-semibold text-amber-700">This quote is no longer available for confirmation.</p>
               )}
             </div>
           ) : (

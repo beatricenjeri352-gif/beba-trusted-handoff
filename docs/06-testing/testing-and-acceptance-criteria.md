@@ -147,7 +147,7 @@ Additional tests:
 | PAY-008 | User attempts to alter commission through frontend input | Backend rejects the unauthorised change |
 | PAY-009 | Price adjustment is requested | Approval process is triggered |
 | PAY-010 | Approved adjustment is made | Original and revised prices are retained |
-| PAY-011 | Delivery is cancelled | Commission follows the approved cancellation policy |
+| PAY-011 | Delivery is cancelled | No commission is created unless an approved policy says otherwise |
 | PAY-012 | Delivery is disputed | Commission outcome is placed under the appropriate review process |
 
 ## 10. Payment Testing
