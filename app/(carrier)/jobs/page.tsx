@@ -9,6 +9,7 @@ interface AssignmentRow {
   id: string;
   delivery_request_id: string;
   assignment_status: string;
+  carrier_booking_id?: string | null;
   delivery_requests?: { tracking_number?: string; parcel_description?: string; current_status?: string } | null;
 }
 
@@ -110,11 +111,48 @@ export default async function CarrierPage({
 
   const { data: assignmentsRaw } = await supabase
     .from("delivery_assignments")
-    .select("id, delivery_request_id, assignment_status, delivery_requests(tracking_number, parcel_description, current_status)")
+    .select("id, delivery_request_id, assignment_status, carrier_booking_id, delivery_requests(tracking_number, parcel_description, current_status)")
     .eq("carrier_user_id", user.id)
     .order("selected_at", { ascending: false });
 
   const assignments = (assignmentsRaw ?? []) as unknown as AssignmentRow[];
+
+  const { data: pendingBookingsRaw } = await supabase
+    .from("carrier_bookings")
+    .select("id, created_at")
+    .eq("carrier_user_id", user.id)
+    .eq("booking_status", "pending_carrier_confirmation")
+    .order("created_at", { ascending: false });
+
+  const pendingBookings = (pendingBookingsRaw ?? []) as { id: string; created_at: string }[];
+
+  async function respondToBooking(formData: FormData) {
+    "use server";
+
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+
+    if (!currentUser) redirect("/login");
+
+    const bookingId = String(formData.get("bookingId") ?? "");
+    const response = String(formData.get("response") ?? "");
+
+    if (!bookingId || !["accepted", "declined"].includes(response)) {
+      redirect("/jobs?error=invalid-response");
+    }
+
+    const { error } = await supabase.rpc("respond_to_carrier_booking", {
+      p_booking_id: bookingId,
+      p_response: response,
+    });
+
+    if (error) redirect("/jobs?error=booking-response-failed");
+
+    revalidatePath("/jobs");
+    redirect("/jobs?saved=booking-response");
+  }
 
   async function respondToAssignment(formData: FormData) {
     "use server";
@@ -258,6 +296,35 @@ export default async function CarrierPage({
       ) : null}
 
       <section className="mt-6">
+        <h2 className="text-xl font-bold">Booking requests</h2>
+        <div className="mt-3 space-y-3">
+          {pendingBookings.length ? pendingBookings.map((booking) => {
+            const count = assignments.filter((assignment) => assignment.carrier_booking_id === booking.id).length;
+            return (
+              <article key={booking.id} className="rounded-2xl border border-slate-200 p-5">
+                <p className="font-bold">{count} {count === 1 ? "delivery" : "deliveries"} from one sender</p>
+                <p className="mt-1 text-sm text-slate-600">One answer applies to every delivery in this booking.</p>
+                <div className="mt-4 flex gap-3">
+                  <form action={respondToBooking}>
+                    <input type="hidden" name="bookingId" value={booking.id} />
+                    <input type="hidden" name="response" value="accepted" />
+                    <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Accept all</button>
+                  </form>
+                  <form action={respondToBooking}>
+                    <input type="hidden" name="bookingId" value={booking.id} />
+                    <input type="hidden" name="response" value="declined" />
+                    <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Decline all</button>
+                  </form>
+                </div>
+              </article>
+            );
+          }) : (
+            <p className="rounded-xl border border-slate-200 p-5 text-sm text-slate-600">No booking requests waiting.</p>
+          )}
+        </div>
+      </section>
+
+      <section className="mt-6">
         <h2 className="text-xl font-bold">Delivery assignments</h2>
         <div className="mt-3 space-y-3">
           {assignments.length ? assignments.map((assignment) => (
@@ -266,7 +333,7 @@ export default async function CarrierPage({
               <p className="mt-1 text-sm text-slate-600">{assignment.delivery_requests?.parcel_description}</p>
               <p className="mt-2 text-sm font-semibold capitalize">{assignment.assignment_status.replaceAll("_", " ")}</p>
 
-              {assignment.assignment_status === "pending_carrier_confirmation" ? (
+              {assignment.assignment_status === "pending_carrier_confirmation" && !assignment.carrier_booking_id ? (
                 <div className="mt-4 flex gap-3">
                   <form action={respondToAssignment}>
                     <input type="hidden" name="assignmentId" value={assignment.id} />

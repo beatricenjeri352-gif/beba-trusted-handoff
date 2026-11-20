@@ -171,6 +171,13 @@ export default async function DeliveryDetailPage({
     .eq("approval_status", "approved")
     .eq("active_status", true);
 
+  const { data: openBookings } = await supabase
+    .from("carrier_bookings")
+    .select("id, carrier_user_id, created_at")
+    .eq("sender_user_id", user.id)
+    .eq("booking_status", "pending_carrier_confirmation")
+    .order("created_at", { ascending: false });
+
   async function calculateQuote() {
     "use server";
 
@@ -314,18 +321,45 @@ export default async function DeliveryDetailPage({
     const carrierUserId = String(formData.get("carrierUserId") ?? "");
     if (!carrierUserId) redirect(`/deliveries/${id}?error=carrier-required`);
 
-    const { error } = await supabase.rpc("select_delivery_carrier", {
-      p_delivery_id: id,
+    const { error } = await supabase.rpc("create_carrier_booking", {
       p_carrier_user_id: carrierUserId,
+      p_delivery_ids: [id],
     });
 
     if (error) {
-      console.error("Carrier assignment selection failed", error);
+      console.error("Carrier booking creation failed", error);
       redirect(`/deliveries/${id}?error=assignment-failed`);
     }
 
     revalidatePath(`/deliveries/${id}`);
     redirect(`/deliveries/${id}?saved=carrier-selected`);
+  }
+
+  async function addToBooking(formData: FormData) {
+    "use server";
+
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+
+    if (!currentUser) redirect("/login");
+
+    const bookingId = String(formData.get("bookingId") ?? "");
+    if (!bookingId) redirect(`/deliveries/${id}?error=booking-required`);
+
+    const { error } = await supabase.rpc("add_delivery_to_carrier_booking", {
+      p_booking_id: bookingId,
+      p_delivery_id: id,
+    });
+
+    if (error) {
+      console.error("Adding delivery to carrier booking failed", error);
+      redirect(`/deliveries/${id}?error=booking-add-failed`);
+    }
+
+    revalidatePath(`/deliveries/${id}`);
+    redirect(`/deliveries/${id}?saved=added-to-booking`);
   }
 
   return (
@@ -478,6 +512,24 @@ export default async function DeliveryDetailPage({
             </p>
           ) : delivery.current_status === "draft" ? (
             <div className="mt-3 space-y-3">
+              {openBookings?.length ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="font-bold">Add to an open carrier booking</p>
+                  <p className="mt-1 text-sm text-slate-600">Send this delivery with a carrier you already booked for another delivery.</p>
+                  <div className="mt-3 space-y-2">
+                    {openBookings.map((booking) => {
+                      const bookedCarrier = carriers?.find((carrier) => carrier.user_id === booking.carrier_user_id);
+                      return (
+                        <form key={booking.id} action={addToBooking} className="flex items-center justify-between gap-3">
+                          <input type="hidden" name="bookingId" value={booking.id} />
+                          <span className="text-sm text-slate-700">{bookedCarrier?.profile_description || "Booked carrier"}</span>
+                          <button className="rounded-lg border border-emerald-700 px-3 py-2 text-sm font-semibold text-emerald-800">Add to booking</button>
+                        </form>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
               {carriers?.length ? carriers.map((carrier) => (
                 <form key={carrier.user_id} action={selectCarrier} className="rounded-xl border border-slate-200 p-4">
                   <input type="hidden" name="carrierUserId" value={carrier.user_id} />

@@ -64,6 +64,7 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
 - Sender quotes use walking distance only (Google Routes `WALK`) through `create_walking_delivery_quote`, with bands from `lib/pricing/walking-bands.ts`. Routes over 3 km return "Too far to walk".
 - The sender delivery page shows a walking price preview before any carrier is chosen. It is calculated on page load from the Google walking route and stores nothing. If Google fails, it shows "Estimate unavailable" and no price.
 - Migration `202611190010_walking_band_quotes.sql` is applied on the hosted Beba project. The user ran it through the Supabase SQL Editor, and a read-only check confirmed the function, the `pricing_model` column, and the legacy-only 5 km check.
+- Migration `202611190011_carrier_bookings.sql` is applied on the hosted Beba project through the SQL Editor. It adds `carrier_bookings`, `delivery_assignments.carrier_booking_id`, and the functions `create_carrier_booking`, `add_delivery_to_carrier_booking`, and `respond_to_carrier_booking`. Carrier accept or decline applies to every delivery in a booking. Sender pages add deliveries to an open booking for the same carrier. The Supabase CLI migration history still needs repair for `0010` and `0011`.
 - No migration should be deployed without explicit user authorization.
 
 ## Database and Migration Rules
