@@ -4,7 +4,7 @@ import { connection } from "next/server";
 
 import { ProfileSwitcher } from "@/components/profile-switcher";
 import { getRoadDistancesMetres } from "@/lib/carrier/distance";
-import { describePickupDistance, describeRatings, isLocationFresh } from "@/lib/carrier/location";
+import { describePickupDistance, describeRatings, isLocationFresh, routeTransportMethodForCarrier } from "@/lib/carrier/location";
 import { isCarrierProfileLocked } from "@/lib/profiles/carrier-lock";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -271,6 +271,7 @@ export default async function CarrierPage({
             key: deliveryId,
             from: { latitude: Number(ownLocation.latitude), longitude: Number(ownLocation.longitude) },
             to: { latitude: Number(pickup.latitude), longitude: Number(pickup.longitude) },
+            transportMethod: routeTransportMethodForCarrier(profile ?? {}),
           }];
         }),
       )

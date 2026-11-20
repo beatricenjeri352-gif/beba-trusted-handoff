@@ -6,7 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getActualRouteDistanceMetres } from "@/lib/pricing/google-maps";
 import { calculateWalkingDeliveryQuote } from "@/lib/pricing/walking-bands";
 import { getCarrierDistancesToPickup } from "@/lib/carrier/distance";
-import { describeCarrierDistance, describeRatings, validateReview } from "@/lib/carrier/location";
+import { describeCarrierDistance, describeRatings, routeTransportMethodForCarrier, validateReview } from "@/lib/carrier/location";
 
 interface AssignmentRow {
   id: string;
@@ -175,15 +175,18 @@ export default async function DeliveryDetailPage({
 
   const carrierIds = carriers?.map((carrier) => carrier.user_id) ?? [];
   const pickupStop = stops?.find((stop) => stop.stop_type === "pickup");
+  const carrierTravelModes = new Map(
+    (carriers ?? []).map((carrier) => [carrier.user_id, routeTransportMethodForCarrier(carrier)]),
+  );
   const carrierDistances = delivery.current_status === "draft" && carrierIds.length && pickupStop?.latitude && pickupStop?.longitude
     ? await getCarrierDistancesToPickup(carrierIds, {
         latitude: Number(pickupStop.latitude),
         longitude: Number(pickupStop.longitude),
-      })
+      }, carrierTravelModes)
     : new Map<string, number | null>();
 
   const { data: reviewRows } = carrierIds.length
-    ? await supabase.from("delivery_reviews").select("carrier_user_id, rating").in("carrier_user_id", carrierIds)
+    ? await supabase.from("delivery_review_public").select("carrier_user_id, rating").in("carrier_user_id", carrierIds)
     : { data: null };
 
   const ratingsByCarrier = new Map<string, number[]>();
@@ -199,7 +202,7 @@ export default async function DeliveryDetailPage({
   });
 
   const { data: existingReview } = await supabase
-    .from("delivery_reviews")
+    .from("delivery_review_public")
     .select("rating, comment")
     .eq("delivery_request_id", delivery.id)
     .maybeSingle();

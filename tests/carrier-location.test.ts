@@ -8,6 +8,7 @@ import {
   describeRatings,
   formatDistance,
   isLocationFresh,
+  routeTransportMethodForCarrier,
   validateReview,
 } from "../lib/carrier/location.ts";
 
@@ -42,6 +43,15 @@ test("describes carrier distance and ratings for the sender", () => {
   assert.equal(describeCarrierDistance(distances, "offline"), "Not online right now");
   assert.equal(describeRatings([4, 5]), "4.5 average from 2 reviews");
   assert.equal(describeRatings([]), "No reviews yet");
+});
+
+test("uses walking, bicycle, or driving based on the carrier profile", () => {
+  assert.equal(routeTransportMethodForCarrier({ vehicle_type: "walking" }), "walking");
+  assert.equal(routeTransportMethodForCarrier({ vehicle_type: "bicycle" }), "bicycle");
+  assert.equal(routeTransportMethodForCarrier({ vehicle_type: "motorcycle" }), "car");
+  assert.equal(routeTransportMethodForCarrier({ vehicle_type: "car" }), "car");
+  assert.equal(routeTransportMethodForCarrier({ carrier_type: "motorcycle", vehicle_type: null }), "car");
+  assert.equal(routeTransportMethodForCarrier({ carrier_type: "individual", vehicle_type: null }), "walking");
 });
 
 test("does not show a pickup distance to an offline carrier", () => {

@@ -1,5 +1,5 @@
 -- Carrier live location (while online) and sender reviews for completed deliveries.
--- DRAFT: not applied to hosted Supabase. Requires explicit user approval before applying.
+-- Approved for hosted apply: sender_user_id is not on the public rating view.
 
 create table public.carrier_locations (
   carrier_user_id uuid primary key references public.users(id) on delete cascade,
@@ -9,6 +9,8 @@ create table public.carrier_locations (
 );
 
 alter table public.carrier_locations enable row level security;
+
+grant select, insert, update, delete on public.carrier_locations to authenticated;
 
 -- Senders never read carrier coordinates directly. Distances are computed server-side with the service role.
 create policy "Carriers view their own location"
@@ -53,10 +55,19 @@ create table public.delivery_reviews (
 
 alter table public.delivery_reviews enable row level security;
 
-create policy "Authenticated users read delivery reviews"
+grant select, insert on public.delivery_reviews to authenticated;
+
+create index delivery_reviews_carrier_user_id_idx
+  on public.delivery_reviews (carrier_user_id);
+
+-- Full rows, including sender_user_id, are only for the reviewed carrier and admins.
+create policy "Carriers and administrators read delivery reviews"
   on public.delivery_reviews for select
   to authenticated
-  using (true);
+  using (
+    carrier_user_id = auth.uid()
+    or public.is_administrator()
+  );
 
 create policy "Senders review their completed deliveries"
   on public.delivery_reviews for insert
@@ -73,3 +84,10 @@ create policy "Senders review their completed deliveries"
         and a.carrier_user_id = delivery_reviews.carrier_user_id
     )
   );
+
+-- Ratings and comments without sender identity. Runs as the view owner so RLS on the table does not hide public scores.
+create view public.delivery_review_public as
+select id, delivery_request_id, carrier_user_id, rating, comment, created_at
+from public.delivery_reviews;
+
+grant select on public.delivery_review_public to authenticated;

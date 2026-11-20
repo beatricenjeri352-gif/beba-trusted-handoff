@@ -1,5 +1,36 @@
+import type { TransportMethod } from "../pricing/delivery-pricing";
+
 export const CARRIER_LOCATION_MAX_AGE_MS = 30 * 60 * 1000;
 export const REVIEW_COMMENT_MAX_LENGTH = 500;
+
+const DRIVING_VEHICLE_TYPES = new Set([
+  "motorcycle",
+  "motorbike",
+  "tuktuk",
+  "car",
+  "pickup",
+  "van",
+  "truck",
+  "matatu",
+  "public_transport",
+]);
+
+const DRIVING_CARRIER_TYPES = new Set(["motorcycle", "car", "van", "matatu"]);
+
+export function routeTransportMethodForCarrier(profile: {
+  vehicle_type?: string | null;
+  carrier_type?: string | null;
+}): TransportMethod {
+  const vehicle = profile.vehicle_type?.trim().toLowerCase() ?? "";
+  if (vehicle === "walking") return "walking";
+  if (vehicle === "bicycle") return "bicycle";
+  if (DRIVING_VEHICLE_TYPES.has(vehicle)) return "car";
+
+  const carrierType = profile.carrier_type?.trim().toLowerCase() ?? "";
+  if (DRIVING_CARRIER_TYPES.has(carrierType)) return "car";
+
+  return "walking";
+}
 
 export function formatDistance(metres: number): string {
   if (!Number.isSafeInteger(metres) || metres < 0) throw new Error("INVALID_DISTANCE");
