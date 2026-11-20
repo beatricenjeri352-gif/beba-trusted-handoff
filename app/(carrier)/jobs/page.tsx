@@ -1,9 +1,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 
 import { ProfileSwitcher } from "@/components/profile-switcher";
+import { getRoadDistancesMetres } from "@/lib/carrier/distance";
+import { describePickupDistance, describeRatings, isLocationFresh } from "@/lib/carrier/location";
 import { isCarrierProfileLocked } from "@/lib/profiles/carrier-lock";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+import { CarrierLocationToggle } from "./carrier-location-toggle";
 
 interface AssignmentRow {
   id: string;
@@ -28,6 +34,25 @@ interface ChargeRow {
   sender_agreed_at: string | null;
   carrier_agreed_at: string | null;
   status: string;
+}
+
+interface DeliveryStopRow {
+  delivery_request_id: string;
+  stop_type: string;
+  location_name: string;
+  latitude: number | string | null;
+  longitude: number | string | null;
+}
+
+interface ReviewRow {
+  rating: number;
+  comment: string | null;
+  created_at: string;
+}
+
+async function requestTimeMs(): Promise<number> {
+  await connection();
+  return Date.now();
 }
 
 export default async function CarrierPage({
@@ -208,6 +233,57 @@ export default async function CarrierPage({
 
   const chargeRows = (chargeRowsRaw ?? []) as unknown as ChargeRow[];
 
+  const { data: ownLocation } = await supabase
+    .from("carrier_locations")
+    .select("latitude, longitude, updated_at")
+    .eq("carrier_user_id", user.id)
+    .maybeSingle();
+  const nowMs = await requestTimeMs();
+  const isOnline = Boolean(ownLocation && isLocationFresh(ownLocation.updated_at, nowMs));
+
+  const deliveryStops: DeliveryStopRow[] = [];
+  if (deliveryIds.length) {
+    try {
+      const admin = createSupabaseAdminClient();
+      const { data } = await admin
+        .from("delivery_stops")
+        .select("delivery_request_id, stop_type, location_name, latitude, longitude")
+        .in("delivery_request_id", deliveryIds);
+      deliveryStops.push(...((data ?? []) as unknown as DeliveryStopRow[]));
+    } catch (error) {
+      console.error("Loading delivery stops for carrier failed", error);
+    }
+  }
+
+  const pickupByDelivery = new Map<string, DeliveryStopRow>();
+  const destinationByDelivery = new Map<string, DeliveryStopRow>();
+  for (const stop of deliveryStops) {
+    if (stop.stop_type === "pickup") pickupByDelivery.set(stop.delivery_request_id, stop);
+    if (stop.stop_type === "destination") destinationByDelivery.set(stop.delivery_request_id, stop);
+  }
+
+  const pickupDistances = isOnline && ownLocation
+    ? await getRoadDistancesMetres(
+        deliveryIds.flatMap((deliveryId) => {
+          const pickup = pickupByDelivery.get(deliveryId);
+          if (pickup?.latitude == null || pickup.longitude == null) return [];
+          return [{
+            key: deliveryId,
+            from: { latitude: Number(ownLocation.latitude), longitude: Number(ownLocation.longitude) },
+            to: { latitude: Number(pickup.latitude), longitude: Number(pickup.longitude) },
+          }];
+        }),
+      )
+    : new Map<string, number | null>();
+
+  const { data: reviewRowsRaw } = await supabase
+    .from("delivery_reviews")
+    .select("rating, comment, created_at")
+    .eq("carrier_user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  const reviewRows = (reviewRowsRaw ?? []) as unknown as ReviewRow[];
+
   async function proposeAdditionalCharge(formData: FormData) {
     "use server";
 
@@ -295,6 +371,15 @@ export default async function CarrierPage({
         </p>
       ) : null}
 
+      {profile?.approval_status === "approved" && profile.active_status ? (
+        <section className="mt-6">
+          <h2 className="text-xl font-bold">Availability</h2>
+          <div className="mt-3">
+            <CarrierLocationToggle initialOnline={isOnline} />
+          </div>
+        </section>
+      ) : null}
+
       <section className="mt-6">
         <h2 className="text-xl font-bold">Booking requests</h2>
         <div className="mt-3 space-y-3">
@@ -332,6 +417,20 @@ export default async function CarrierPage({
               <p className="font-bold">{assignment.delivery_requests?.tracking_number || "Delivery request"}</p>
               <p className="mt-1 text-sm text-slate-600">{assignment.delivery_requests?.parcel_description}</p>
               <p className="mt-2 text-sm font-semibold capitalize">{assignment.assignment_status.replaceAll("_", " ")}</p>
+
+              {pickupByDelivery.get(assignment.delivery_request_id) ? (
+                <div className="mt-3 space-y-1 text-sm text-slate-600">
+                  <p>Pickup: <strong className="text-slate-900">{pickupByDelivery.get(assignment.delivery_request_id)?.location_name}</strong></p>
+                  <p>Drop-off: <strong className="text-slate-900">{destinationByDelivery.get(assignment.delivery_request_id)?.location_name ?? "Not set"}</strong></p>
+                  <p className="font-semibold text-emerald-800">
+                    {describePickupDistance({
+                      online: isOnline,
+                      pickupPinned: Boolean(pickupByDelivery.get(assignment.delivery_request_id)?.latitude),
+                      metres: pickupDistances.get(assignment.delivery_request_id),
+                    })}
+                  </p>
+                </div>
+              ) : null}
 
               {assignment.assignment_status === "pending_carrier_confirmation" && !assignment.carrier_booking_id ? (
                 <div className="mt-4 flex gap-3">
@@ -393,6 +492,19 @@ export default async function CarrierPage({
           )) : (
             <p className="rounded-xl border border-slate-200 p-5 text-sm text-slate-600">No delivery assignments yet.</p>
           )}
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-xl font-bold">Your reviews</h2>
+        <p className="mt-2 text-sm text-slate-600">{describeRatings(reviewRows.map((review) => Number(review.rating)))}</p>
+        <div className="mt-3 space-y-3">
+          {reviewRows.filter((review) => review.comment).map((review) => (
+            <article key={review.created_at} className="rounded-xl border border-slate-200 p-4">
+              <p className="font-semibold">{review.rating}/5</p>
+              <p className="mt-1 text-sm text-slate-600">{review.comment}</p>
+            </article>
+          ))}
         </div>
       </section>
 

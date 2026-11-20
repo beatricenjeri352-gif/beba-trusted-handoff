@@ -5,6 +5,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getActualRouteDistanceMetres } from "@/lib/pricing/google-maps";
 import { calculateWalkingDeliveryQuote } from "@/lib/pricing/walking-bands";
+import { getCarrierDistancesToPickup } from "@/lib/carrier/distance";
+import { describeCarrierDistance, describeRatings, validateReview } from "@/lib/carrier/location";
 
 interface AssignmentRow {
   id: string;
@@ -170,6 +172,46 @@ export default async function DeliveryDetailPage({
     .select("user_id, carrier_type, operating_towns, delivery_methods, vehicle_type, profile_description")
     .eq("approval_status", "approved")
     .eq("active_status", true);
+
+  const carrierIds = carriers?.map((carrier) => carrier.user_id) ?? [];
+  const pickupStop = stops?.find((stop) => stop.stop_type === "pickup");
+  const carrierDistances = delivery.current_status === "draft" && carrierIds.length && pickupStop?.latitude && pickupStop?.longitude
+    ? await getCarrierDistancesToPickup(carrierIds, {
+        latitude: Number(pickupStop.latitude),
+        longitude: Number(pickupStop.longitude),
+      })
+    : new Map<string, number | null>();
+
+  const { data: reviewRows } = carrierIds.length
+    ? await supabase.from("delivery_reviews").select("carrier_user_id, rating").in("carrier_user_id", carrierIds)
+    : { data: null };
+
+  const ratingsByCarrier = new Map<string, number[]>();
+  for (const row of reviewRows ?? []) {
+    ratingsByCarrier.set(row.carrier_user_id, [...(ratingsByCarrier.get(row.carrier_user_id) ?? []), Number(row.rating)]);
+  }
+
+  const rankedCarriers = [...(carriers ?? [])].sort((a, b) => {
+    const distanceA = carrierDistances.get(a.user_id);
+    const distanceB = carrierDistances.get(b.user_id);
+    if (distanceA == null || distanceB == null) return Number(distanceA == null) - Number(distanceB == null);
+    return distanceA - distanceB;
+  });
+
+  const { data: existingReview } = await supabase
+    .from("delivery_reviews")
+    .select("rating, comment")
+    .eq("delivery_request_id", delivery.id)
+    .maybeSingle();
+
+  const { data: latestAssignment } = await supabase
+    .from("delivery_assignments")
+    .select("carrier_user_id")
+    .eq("delivery_request_id", delivery.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const completedCarrierId = latestAssignment?.carrier_user_id ?? null;
 
   const { data: openBookings } = await supabase
     .from("carrier_bookings")
@@ -362,6 +404,36 @@ export default async function DeliveryDetailPage({
     redirect(`/deliveries/${id}?saved=added-to-booking`);
   }
 
+  async function submitDeliveryReview(formData: FormData) {
+    "use server";
+
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+
+    if (!currentUser) redirect("/login");
+
+    const review = validateReview({ rating: formData.get("rating"), comment: formData.get("comment") });
+    if (!review.ok) redirect(`/deliveries/${id}?error=${review.error}`);
+
+    const { error } = await supabase.from("delivery_reviews").insert({
+      delivery_request_id: id,
+      sender_user_id: currentUser.id,
+      carrier_user_id: String(formData.get("carrierUserId") ?? ""),
+      rating: review.rating,
+      comment: review.comment,
+    });
+
+    if (error) {
+      console.error("Saving delivery review failed", error);
+      redirect(`/deliveries/${id}?error=review-not-saved`);
+    }
+
+    revalidatePath(`/deliveries/${id}`);
+    redirect(`/deliveries/${id}?saved=review-created`);
+  }
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <Link href="/deliveries" className="text-sm font-semibold text-emerald-700">← Back to deliveries</Link>
@@ -393,7 +465,11 @@ export default async function DeliveryDetailPage({
                       ? "The server pricing service is not configured."
                       : query.error === "quote-unavailable"
                         ? "A price estimate could not be created. Confirm the carrier, route, and pricing are still available."
-                        : "The quote could not be created."}
+                        : query.error === "review-not-saved"
+                          ? "Your review could not be saved. Only the sender of a completed delivery can review its carrier, once."
+                          : query.error === "RATING_INVALID" || query.error === "COMMENT_TOO_LONG"
+                            ? "Choose a rating from 1 to 5, and keep the comment under 500 characters."
+                            : "The quote could not be created."}
           </p>
         ) : null}
 
@@ -530,11 +606,15 @@ export default async function DeliveryDetailPage({
                   </div>
                 </div>
               ) : null}
-              {carriers?.length ? carriers.map((carrier) => (
+              {rankedCarriers.length ? rankedCarriers.map((carrier) => (
                 <form key={carrier.user_id} action={selectCarrier} className="rounded-xl border border-slate-200 p-4">
                   <input type="hidden" name="carrierUserId" value={carrier.user_id} />
                   <p className="font-bold">{carrier.profile_description || "Approved carrier"}</p>
                   <p className="mt-1 text-sm text-slate-600">{carrier.carrier_type?.replaceAll("_", " ") || "Carrier"}</p>
+                  {delivery.current_status === "draft" ? (
+                    <p className="mt-1 text-sm font-semibold text-emerald-800">{describeCarrierDistance(carrierDistances, carrier.user_id)}</p>
+                  ) : null}
+                  <p className="mt-1 text-sm text-slate-600">Rating: {describeRatings(ratingsByCarrier.get(carrier.user_id))}</p>
                   {carrier.operating_towns?.length ? <p className="mt-1 text-sm text-slate-600">Areas: {carrier.operating_towns.join(", ")}</p> : null}
                   {carrier.delivery_methods?.length ? <p className="mt-1 text-sm text-slate-600">Methods: {carrier.delivery_methods.join(", ").replaceAll("_", " ")}</p> : null}
                   <button className="mt-3 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Select carrier</button>
@@ -547,6 +627,34 @@ export default async function DeliveryDetailPage({
             <p className="mt-3 text-sm text-slate-600">Carrier selection is no longer available for this delivery.</p>
           )}
         </div>
+
+        {delivery.current_status === "completed" && completedCarrierId ? (
+          <div className="mt-6 rounded-xl border border-slate-200 p-4">
+            <h2 className="font-bold">Rate your carrier</h2>
+            {existingReview ? (
+              <p className="mt-2 text-sm text-slate-600">
+                You rated this delivery {existingReview.rating}/5.{existingReview.comment ? ` "${existingReview.comment}"` : ""}
+              </p>
+            ) : (
+              <form action={submitDeliveryReview} className="mt-3 space-y-3">
+                <input type="hidden" name="carrierUserId" value={completedCarrierId} />
+                <label className="block text-sm font-semibold text-slate-700">
+                  Stars
+                  <select name="rating" required defaultValue="5" className="mt-1 block rounded-lg border border-slate-300 px-3 py-2">
+                    {[5, 4, 3, 2, 1].map((value) => (
+                      <option key={value} value={value}>{value} star{value === 1 ? "" : "s"}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-slate-700">
+                  Comment (optional)
+                  <textarea name="comment" maxLength={500} rows={3} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2" />
+                </label>
+                <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Submit review</button>
+              </form>
+            )}
+          </div>
+        ) : null}
 
         <div className="mt-6">
           <h2 className="font-bold">Journey</h2>
