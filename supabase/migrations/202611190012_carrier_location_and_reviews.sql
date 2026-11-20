@@ -1,5 +1,5 @@
 -- Carrier live location (while online) and sender reviews for completed deliveries.
--- Approved for hosted apply: sender_user_id is not on the public rating view.
+-- Applied to the hosted Beba project after explicit approval and verified read-only.
 
 create table public.carrier_locations (
   carrier_user_id uuid primary key references public.users(id) on delete cascade,
