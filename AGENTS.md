@@ -60,7 +60,7 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
 - The pure pricing engine and 21 acceptance tests are implemented.
 - Administrator pricing controls and negotiated-charge approval UI are implemented locally. The walking bands (see Approved Pricing Rules) are in `lib/pricing/walking-bands.ts`; the database quote function still uses the earlier formula until a new migration is approved.
 - The 202611190003 pricing migration has been reviewed and updated locally; it has not been deployed.
-- Server-side Google Maps Routes API integration is implemented locally; live API access has not been tested.
+- Server-side Google Maps Routes API integration is verified for walking routes (live `computeRoutes` WALK request returned 200 with `distanceMeters`). Vehicle travel modes are not yet live-tested.
 - Sender quotes use walking distance only (Google Routes `WALK`) through `create_walking_delivery_quote`, with bands from `lib/pricing/walking-bands.ts`. Routes over 3 km return "Too far to walk".
 - Migration `202611190010_walking_band_quotes.sql` is applied on the hosted Beba project. The user ran it through the Supabase SQL Editor, and a read-only check confirmed the function, the `pricing_model` column, and the legacy-only 5 km check.
 - No migration should be deployed without explicit user authorization.
