@@ -1,6 +1,6 @@
 -- Walking band pricing (approved by the user), replacing the distance formula for new quotes.
 -- Additive: existing quotes keep pricing_model = 'legacy_distance' and their original values.
--- DRAFT: not applied to any hosted project. Review, then apply only with explicit approval.
+-- Applied to the hosted Beba project after explicit approval and verified read-only.
 
 alter table public.delivery_quotes
   add column if not exists pricing_model text not null default 'legacy_distance'
