@@ -46,6 +46,7 @@ Work is split into **stories**. The epic is a long-lived branch; each story is a
    - Respect accessibility and responsiveness: semantic headings in order, alt text or `aria-label`s, usable at mobile widths, and `prefers-reduced-motion` for animation.
    - Schema changes: inspect the latest file in `supabase/migrations/` and add a new, correctly ordered migration with RLS policies and grants for new tables. Do not apply migrations to a hosted project unless explicitly asked. Never hardcode credentials or keys.
    - Marketing claims must be true. Do not invent statistics, user counts, quotes, or features that do not exist.
+   - Pricing: the walking band table lives only in `lib/pricing/walking-bands.ts`; screens read it, never hard-code fees. Distance comes from the Google Routes API with `travelMode: WALK`, never straight-line distance. Money is integer cents; commission is 10% rounded to the nearest whole shilling. Tests must cover band edges (0.5, 1.2, 2.0, 3.0 km) and the over-3 km "too far to walk" result. Update the Approved Pricing Rules section in `AGENTS.md` whenever a rule changes.
 
 6. **Verify**
    - Run from the repo root: `npm run lint`, `npx tsc --noEmit`, and `npm run build` when routes or imports changed. There is no unit test runner for the UI; the existing `tests/` are matching smoke tests for SQL and the matching pipeline, so run them only if the story touches matching.

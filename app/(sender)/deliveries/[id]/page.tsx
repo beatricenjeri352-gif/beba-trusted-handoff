@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getActualRouteDistanceMetres } from "@/lib/pricing/google-maps";
-import { normalizeTransportMethod } from "@/lib/pricing/delivery-pricing";
+import { calculateWalkingDeliveryQuote } from "@/lib/pricing/walking-bands";
 
 interface AssignmentRow {
   id: string;
@@ -129,17 +129,6 @@ export default async function DeliveryDetailPage({
       redirect(`/deliveries/${id}?error=carrier-required-for-quote`);
     }
 
-    const { data: carrierProfile } = await supabase
-      .from("carrier_profiles")
-      .select("vehicle_type")
-      .eq("user_id", assignedCarrier.carrier_user_id)
-      .maybeSingle();
-
-    const transportMethod = normalizeTransportMethod(carrierProfile?.vehicle_type);
-    if (!transportMethod) {
-      redirect(`/deliveries/${id}?error=unsupported-transport-method`);
-    }
-
     const { data: routeStops } = await supabase
       .from("delivery_stops")
       .select("stop_type, latitude, longitude")
@@ -155,7 +144,7 @@ export default async function DeliveryDetailPage({
     let route;
     try {
       route = await getActualRouteDistanceMetres(
-        transportMethod,
+        "walking",
         { latitude: Number(pickup.latitude), longitude: Number(pickup.longitude) },
         { latitude: Number(destination.latitude), longitude: Number(destination.longitude) },
       );
@@ -166,6 +155,10 @@ export default async function DeliveryDetailPage({
       redirect(`/deliveries/${id}?error=${code}`);
     }
 
+    if (calculateWalkingDeliveryQuote(route.metres).status === "too_far_to_walk") {
+      redirect(`/deliveries/${id}?error=too-far-to-walk`);
+    }
+
     let admin;
     try {
       admin = createSupabaseAdminClient();
@@ -174,12 +167,16 @@ export default async function DeliveryDetailPage({
       redirect(`/deliveries/${id}?error=${encodeURIComponent(code)}`);
     }
 
-    const { data: quoteId, error } = await admin.rpc("create_delivery_quote", {
+    const { data: quoteId, error } = await admin.rpc("create_walking_delivery_quote", {
       delivery_id: id,
-      actual_route_distance_metres: route.metres,
+      walking_distance_metres: route.metres,
       route_provider: route.provider,
       route_reference: route.providerReference,
     });
+
+    if (error?.message?.includes("TOO_FAR_TO_WALK")) {
+      redirect(`/deliveries/${id}?error=too-far-to-walk`);
+    }
 
     if (error || !quoteId) {
       redirect(`/deliveries/${id}?error=quote-unavailable`);
@@ -287,8 +284,8 @@ export default async function DeliveryDetailPage({
           <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800" role="alert">
             {query.error === "carrier-required-for-quote"
               ? "Select and confirm a carrier before calculating the price."
-              : query.error === "unsupported-transport-method"
-                ? "The carrier transport method is not supported by the approved pricing rules."
+              : query.error === "too-far-to-walk"
+                ? "Too far to walk. Over 3 km, choose a car, tuktuk, or boda instead."
                 : query.error === "ROUTING_PROVIDER_NOT_CONFIGURED"
                   ? "Route distance is unavailable until the Google Maps key is configured on the server."
                   : query.error === "ROUTE_DISTANCE_NOT_AVAILABLE"

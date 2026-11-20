@@ -29,33 +29,26 @@ Active implementation flow:
 
 ## Approved Pricing Rules
 
-The following rules are authoritative:
+The current walking pricing (approved by the user, replacing the earlier formula) is authoritative:
 
-- Base delivery fee: KES 50.
-- Minimum billable distance: 5 km.
-- Billable distance: maximum of actual route distance and 5 km.
-- Walking rate: KES 10 per billable km.
-- Bicycle rate: KES 20 per billable km.
-- Motorbike/motorcycle rate: KES 20 per billable km.
-- Car rate: KES 20 per billable km.
-- Distinguish walking, bicycle, motorbike, and car in the database and application.
-- No automatic weight, parcel-size, traffic, waiting-time, or special-handling charge.
+- Beba is not a delivery app. It connects the sender with the carrier. The carrier is paid the Beba-calculated amount, subject to agreement by both parties.
+- Distance: walking route distance from Google Maps Routes API (`computeRoutes`, `travelMode: WALK`), `distanceMeters` between the pickup pin and drop-off pin. Never straight-line distance and never an AI estimate.
+- Price table in `lib/pricing/walking-bands.ts` (the single config; do not hard-code in screens):
+  - up to and including 0.5 km: KES 60
+  - over 0.5 km, up to and including 1.2 km: KES 100
+  - over 1.2 km, up to and including 2.0 km: KES 150
+  - over 2.0 km, up to and including 3.0 km: KES 200
+  - over 3.0 km: "Too far to walk. Choose a car, tuktuk, or boda instead." No walking fee is offered.
+- Commission: 10% of the final approved delivery fee, rounded to the nearest whole shilling. No minimum.
+- Carrier earnings = fee minus commission.
+- If Google Maps fails, show the price as "Estimate" and recalculate when the route loads. Never use a guess or straight-line distance silently.
+- Money is stored as integer cents (whole shillings are multiples of 100). Distance is integer metres.
+- Prices and commission are calculated server-side only.
+- Vehicle pricing (car, tuktuk, boda, bicycle, motorbike) is not approved yet and is deferred.
 - Additional charges require a reason, carrier proposal, sender agreement, and Beba administrator approval.
-- Private negotiations are excluded from Beba commission.
-- In-app approved additions are included in the final Beba price.
-- Commission: 10% of the final approved Beba delivery price.
-- No minimum commission.
 - Commission becomes payable after successful receiver confirmation or an authorised review completion.
-- Commission and prices must be calculated server-side with integer cents and integer metres.
 
-Formula:
-
-```text
-Billable distance = max(actual route distance metres, 5000)
-Distance charge = billable distance km × transport rate
-Delivery price = 50 + distance charge
-Commission = final agreed Beba price × 10%
-```
+Earlier formula (superseded by the walking bands above, still in the database until a migration is approved): base KES 50, 5 km minimum billable distance, KES 10 walking / KES 20 vehicle per billable km, 10% commission.
 
 Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcharges.
 
@@ -65,9 +58,11 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
 - Carrier application, carrier discovery, carrier selection, and assignment accept/decline are implemented.
 - Carrier assignment read access and atomic selection are prepared in `202611190006_delivery_assignment_permissions.sql`; it has not been applied.
 - The pure pricing engine and 21 acceptance tests are implemented.
-- Administrator pricing controls and negotiated-charge approval UI are implemented locally; the approved 5 km minimum and 10% commission are fixed.
+- Administrator pricing controls and negotiated-charge approval UI are implemented locally. The walking bands (see Approved Pricing Rules) are in `lib/pricing/walking-bands.ts`; the database quote function still uses the earlier formula until a new migration is approved.
 - The 202611190003 pricing migration has been reviewed and updated locally; it has not been deployed.
 - Server-side Google Maps Routes API integration is implemented locally; live API access has not been tested.
+- Sender quotes use walking distance only (Google Routes `WALK`) through `create_walking_delivery_quote`, with bands from `lib/pricing/walking-bands.ts`. Routes over 3 km return "Too far to walk".
+- Migration `202611190010_walking_band_quotes.sql` is a local draft. It has not been validated against Postgres or applied to hosted.
 - No migration should be deployed without explicit user authorization.
 
 ## Database and Migration Rules
