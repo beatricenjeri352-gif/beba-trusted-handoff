@@ -1,6 +1,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { ProfileSwitcher } from "@/components/profile-switcher";
+import { isCarrierProfileLocked } from "@/lib/profiles/carrier-lock";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 interface AssignmentRow {
@@ -55,6 +57,10 @@ export default async function CarrierPage({
     } = await supabase.auth.getUser();
 
     if (!currentUser) redirect("/login");
+
+    if (await isCarrierProfileLocked(currentUser.id)) {
+      redirect("/jobs?error=carrier-locked");
+    }
 
     const carrierType = String(formData.get("carrierType") ?? "").trim();
     const operatingTowns = String(formData.get("operatingTowns") ?? "")
@@ -220,10 +226,12 @@ export default async function CarrierPage({
   }
 
   const applicationStatus = profile?.approval_status?.replaceAll("_", " ") ?? "Not applied";
+  const locked = await isCarrierProfileLocked(user.id);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      <p className="text-sm font-semibold text-emerald-700">Carrier workspace</p>
+      <ProfileSwitcher current="carrier" />
+      <p className="mt-6 text-sm font-semibold text-emerald-700">Carrier workspace</p>
       <h1 className="mt-2 text-3xl font-bold">Carrier application</h1>
 
       <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -241,6 +249,8 @@ export default async function CarrierPage({
         <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800" role="alert">
           {params.error === "required-fields"
             ? "Complete the carrier type, operating towns, delivery methods, and profile description."
+            : params.error === "carrier-locked"
+              ? "Your carrier profile is rejected or suspended. An administrator must restore it before you can change it."
             : params.reason
               ? `The carrier application could not be saved. Database code: ${params.reason}.`
               : "The carrier application could not be saved. Please try again."}
@@ -319,6 +329,11 @@ export default async function CarrierPage({
         </div>
       </section>
 
+      {locked ? (
+        <p className="mt-8 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
+          Your carrier application is {applicationStatus}. You cannot apply again until an administrator approves your account.
+        </p>
+      ) : (
       <form action={submitCarrierApplication} className="mt-8 space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
           <label className="mb-2 block text-sm font-medium" htmlFor="carrierType">Carrier type</label>
@@ -385,6 +400,7 @@ export default async function CarrierPage({
           {profile ? "Update carrier application" : "Submit carrier application"}
         </button>
       </form>
+      )}
     </main>
   );
 }
