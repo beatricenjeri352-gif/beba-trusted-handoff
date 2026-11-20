@@ -149,16 +149,16 @@ export default function DeliveryLocationPicker({
               }
             }}
             placeholder="Search building, road, stage, or town"
-            className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3"
+            className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3"
           />
-          <button type="button" onClick={() => void searchLocations()} disabled={searching} aria-label={searching ? "Searching" : "Search location"} title="Search location" className="flex items-center justify-center rounded-xl border border-slate-300 px-4 py-3 disabled:opacity-60">
+          <button type="button" onClick={() => void searchLocations()} disabled={searching} aria-label={searching ? "Searching" : "Search location"} title="Search location" className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-300 px-4 py-3 disabled:opacity-60">
             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="7" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
           </button>
         </div>
-        <button type="button" onClick={useCurrentLocation} className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-left text-sm font-semibold">
+        <button type="button" onClick={useCurrentLocation} className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3 text-left text-sm font-semibold">
           Use my current location
         </button>
 
@@ -169,7 +169,7 @@ export default function DeliveryLocationPicker({
                 key={String(result.place_id)}
                 type="button"
                 onClick={() => chooseSearchResult(result)}
-                className="block w-full border-b border-slate-100 px-3 py-3 text-left text-sm last:border-b-0 hover:bg-slate-50"
+                className="block w-full break-words border-b border-slate-100 px-3 py-3 text-left text-sm last:border-b-0 hover:bg-slate-50"
               >
                 {result.display_name}
               </button>
@@ -207,7 +207,7 @@ export default function DeliveryLocationPicker({
       <input type="hidden" name={`${name}Latitude`} value={latitude} />
       <input type="hidden" name={`${name}Longitude`} value={longitude} />
 
-      <div className="mt-4 overflow-hidden rounded-xl border border-slate-300" style={{ height: 260 }}>
+      <div className="mt-4 h-60 overflow-hidden rounded-xl border border-slate-300 sm:h-[280px]">
         <MapContainer center={position} zoom={13} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
           <TileLayer
             attribution="&copy; OpenStreetMap contributors"

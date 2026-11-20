@@ -77,7 +77,7 @@ export function CarrierLocationToggle({ initialOnline }: { initialOnline: boolea
         type="button"
         onClick={toggleOnline}
         disabled={pending}
-        className="mt-3 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+        className="mt-3 min-h-11 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
       >
         {online ? "Go offline" : "Go online"}
       </button>

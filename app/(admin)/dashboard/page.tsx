@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { PageShell } from "@/components/page-shell";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 interface ActivePricingConfig {
@@ -150,9 +151,9 @@ export default async function AdminPage({
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-12">
+    <PageShell width="wide">
       <p className="text-sm font-semibold text-emerald-700">Administrator workspace</p>
-      <h1 className="mt-2 text-3xl font-bold">Pricing configuration</h1>
+      <h1 className="mt-2 text-2xl font-bold sm:text-3xl">Pricing configuration</h1>
 
       {params.error ? (
         <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800" role="alert">
@@ -177,7 +178,7 @@ export default async function AdminPage({
         </p>
       ) : null}
 
-      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <h2 className="text-xl font-bold">Active configuration</h2>
         <form action={savePricingConfiguration} className="mt-5 grid gap-4 sm:grid-cols-2">
           <div>
@@ -214,7 +215,7 @@ export default async function AdminPage({
         </form>
       </section>
 
-      <section className="mt-6 rounded-2xl border border-slate-200 p-6">
+      <section className="mt-6 rounded-2xl border border-slate-200 p-4 sm:p-6">
         <h2 className="text-xl font-bold">Negotiated charge approvals</h2>
         <div className="mt-4 space-y-3">
           {pendingCharges.length ? pendingCharges.map((charge) => (
@@ -223,7 +224,7 @@ export default async function AdminPage({
               <p className="mt-1 text-sm text-slate-600">{charge.reason}</p>
               <form action={approveCharge} className="mt-3">
                 <input type="hidden" name="chargeId" value={charge.id} />
-                <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Approve and revise quote</button>
+                <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white sm:w-auto">Approve and revise quote</button>
               </form>
             </article>
           )) : (
@@ -231,6 +232,6 @@ export default async function AdminPage({
           )}
         </div>
       </section>
-    </main>
+    </PageShell>
   );
 }

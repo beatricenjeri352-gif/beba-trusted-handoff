@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import DeliveryLocationPickerLoader from "@/components/delivery-location-picker-loader";
+import { PageShell } from "@/components/page-shell";
 import { ProfileSwitcher } from "@/components/profile-switcher";
 
 function normalizePhone(value: string) {
@@ -146,15 +147,15 @@ export default async function SenderPage({
   }
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-12">
+    <PageShell width="medium">
       <ProfileSwitcher current="sender" />
-      <div className="mt-6 flex items-start justify-between gap-4">
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-emerald-700">Sender workspace</p>
-          <h1 className="mt-2 text-3xl font-bold">Deliveries</h1>
+          <h1 className="mt-2 text-2xl font-bold sm:text-3xl">Deliveries</h1>
         </div>
-        <form action={signOut}>
-          <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Sign out</button>
+        <form action={signOut} className="sm:shrink-0">
+          <button className="min-h-11 w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold sm:w-auto">Sign out</button>
         </form>
       </div>
 
@@ -181,7 +182,7 @@ export default async function SenderPage({
       ) : null}
 
       <section className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
-        <form action={createDelivery} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <form action={createDelivery} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <h2 className="text-xl font-bold">Create a delivery request</h2>
 
           <div>
@@ -255,6 +256,6 @@ export default async function SenderPage({
           </div>
         </aside>
       </section>
-    </main>
+    </PageShell>
   );
 }

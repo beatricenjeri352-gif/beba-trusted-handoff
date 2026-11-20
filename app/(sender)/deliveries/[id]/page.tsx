@@ -7,6 +7,7 @@ import { getActualRouteDistanceMetres } from "@/lib/pricing/google-maps";
 import { calculateWalkingDeliveryQuote } from "@/lib/pricing/walking-bands";
 import { getCarrierDistancesToPickup } from "@/lib/carrier/distance";
 import { describeCarrierDistance, describeRatings, routeTransportMethodForCarrier, validateReview } from "@/lib/carrier/location";
+import { PageShell } from "@/components/page-shell";
 
 interface AssignmentRow {
   id: string;
@@ -438,12 +439,12 @@ export default async function DeliveryDetailPage({
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <Link href="/deliveries" className="text-sm font-semibold text-emerald-700">← Back to deliveries</Link>
+    <PageShell>
+      <Link href="/deliveries" className="inline-flex min-h-11 items-center text-sm font-semibold text-emerald-700">← Back to deliveries</Link>
 
-      <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <p className="text-sm font-semibold text-emerald-700">Tracking</p>
-        <h1 className="mt-2 text-3xl font-bold">{delivery.tracking_number}</h1>
+        <h1 className="mt-2 text-2xl font-bold break-words sm:text-3xl">{delivery.tracking_number}</h1>
         <p className="mt-3 inline-block rounded-full bg-slate-100 px-3 py-1 text-sm font-medium">
           {delivery.current_status.replaceAll("_", " ")}
         </p>
@@ -542,7 +543,7 @@ export default async function DeliveryDetailPage({
               {latestQuote.valid_until ? <p className="text-xs text-slate-500">Valid until {new Date(latestQuote.valid_until).toLocaleString()}</p> : null}
               {latestQuote.quote_status === "estimated" || latestQuote.quote_status === "revised" ? (
                 <form action={confirmQuote} className="mt-3">
-                  <button className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Confirm this quote</button>
+                  <button className="min-h-11 w-full rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700 sm:w-auto">Confirm this quote</button>
                 </form>
               ) : latestQuote.quote_status === "confirmed" ? (
                 <p className="mt-3 text-sm font-semibold text-emerald-700">Quote confirmed: KES {(Number(latestQuote.final_agreed_price_cents) / 100).toFixed(2)}</p>
@@ -554,7 +555,7 @@ export default async function DeliveryDetailPage({
             <p className="mt-3 text-sm text-slate-600">No price estimate is available yet.</p>
           )}
           <form action={calculateQuote} className="mt-3">
-            <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Calculate estimate</button>
+            <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white sm:w-auto">Calculate estimate</button>
           </form>
         </div>
 
@@ -570,7 +571,7 @@ export default async function DeliveryDetailPage({
                   {!charge.sender_agreed_at && charge.status !== "approved" ? (
                     <form action={agreeToCharge} className="mt-3">
                       <input type="hidden" name="chargeId" value={charge.id} />
-                      <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Agree to this charge</button>
+                      <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white sm:w-auto">Agree to this charge</button>
                     </form>
                   ) : (
                     <p className="mt-2 text-xs text-emerald-700">Sender agreement recorded</p>
@@ -599,10 +600,10 @@ export default async function DeliveryDetailPage({
                     {openBookings.map((booking) => {
                       const bookedCarrier = carriers?.find((carrier) => carrier.user_id === booking.carrier_user_id);
                       return (
-                        <form key={booking.id} action={addToBooking} className="flex items-center justify-between gap-3">
+                        <form key={booking.id} action={addToBooking} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <input type="hidden" name="bookingId" value={booking.id} />
                           <span className="text-sm text-slate-700">{bookedCarrier?.profile_description || "Booked carrier"}</span>
-                          <button className="rounded-lg border border-emerald-700 px-3 py-2 text-sm font-semibold text-emerald-800">Add to booking</button>
+                          <button className="min-h-11 w-full rounded-lg border border-emerald-700 px-3 py-2 text-sm font-semibold text-emerald-800 sm:w-auto">Add to booking</button>
                         </form>
                       );
                     })}
@@ -620,7 +621,7 @@ export default async function DeliveryDetailPage({
                   <p className="mt-1 text-sm text-slate-600">Rating: {describeRatings(ratingsByCarrier.get(carrier.user_id))}</p>
                   {carrier.operating_towns?.length ? <p className="mt-1 text-sm text-slate-600">Areas: {carrier.operating_towns.join(", ")}</p> : null}
                   {carrier.delivery_methods?.length ? <p className="mt-1 text-sm text-slate-600">Methods: {carrier.delivery_methods.join(", ").replaceAll("_", " ")}</p> : null}
-                  <button className="mt-3 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Select carrier</button>
+                  <button className="mt-3 min-h-11 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Select carrier</button>
                 </form>
               )) : (
                 <p className="text-sm text-slate-600">No approved carriers are currently available.</p>
@@ -643,7 +644,7 @@ export default async function DeliveryDetailPage({
                 <input type="hidden" name="carrierUserId" value={completedCarrierId} />
                 <label className="block text-sm font-semibold text-slate-700">
                   Stars
-                  <select name="rating" required defaultValue="5" className="mt-1 block rounded-lg border border-slate-300 px-3 py-2">
+                  <select name="rating" required defaultValue="5" className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2">
                     {[5, 4, 3, 2, 1].map((value) => (
                       <option key={value} value={value}>{value} star{value === 1 ? "" : "s"}</option>
                     ))}
@@ -653,7 +654,7 @@ export default async function DeliveryDetailPage({
                   Comment (optional)
                   <textarea name="comment" maxLength={500} rows={3} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2" />
                 </label>
-                <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Submit review</button>
+                <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white sm:w-auto">Submit review</button>
               </form>
             )}
           </div>
@@ -674,6 +675,6 @@ export default async function DeliveryDetailPage({
           </div>
         </div>
       </div>
-    </main>
+    </PageShell>
   );
 }

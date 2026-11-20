@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PageShell } from "@/components/page-shell";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function AuthPage() {
@@ -63,8 +64,8 @@ export default function AuthPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-[70vh] max-w-md items-center px-6 py-16">
-      <section className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <PageShell width="auth" center>
+      <section className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <p className="text-sm font-semibold text-emerald-700">Beba</p>
         <h1 className="mt-2 text-3xl font-bold">
           {mode === "login" ? "Sign in" : "Create account"}
@@ -145,6 +146,6 @@ export default function AuthPage() {
 
         {message ? <p className="mt-4 text-sm text-amber-700" role="status">{message}</p> : null}
       </section>
-    </main>
+    </PageShell>
   );
 }

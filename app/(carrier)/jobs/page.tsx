@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 
+import { PageShell } from "@/components/page-shell";
 import { ProfileSwitcher } from "@/components/profile-switcher";
 import { getRoadDistancesMetres } from "@/lib/carrier/distance";
 import { describePickupDistance, describeRatings, isLocationFresh, routeTransportMethodForCarrier } from "@/lib/carrier/location";
@@ -344,10 +345,10 @@ export default async function CarrierPage({
   const locked = await isCarrierProfileLocked(user.id);
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
+    <PageShell>
       <ProfileSwitcher current="carrier" />
       <p className="mt-6 text-sm font-semibold text-emerald-700">Carrier workspace</p>
-      <h1 className="mt-2 text-3xl font-bold">Carrier application</h1>
+      <h1 className="mt-2 text-2xl font-bold sm:text-3xl">Carrier application</h1>
 
       <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <p className="text-sm text-slate-600">Application status</p>
@@ -390,16 +391,16 @@ export default async function CarrierPage({
               <article key={booking.id} className="rounded-2xl border border-slate-200 p-5">
                 <p className="font-bold">{count} {count === 1 ? "delivery" : "deliveries"} from one sender</p>
                 <p className="mt-1 text-sm text-slate-600">One answer applies to every delivery in this booking.</p>
-                <div className="mt-4 flex gap-3">
-                  <form action={respondToBooking}>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                  <form action={respondToBooking} className="w-full sm:w-auto">
                     <input type="hidden" name="bookingId" value={booking.id} />
                     <input type="hidden" name="response" value="accepted" />
-                    <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Accept all</button>
+                    <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Accept all</button>
                   </form>
-                  <form action={respondToBooking}>
+                  <form action={respondToBooking} className="w-full sm:w-auto">
                     <input type="hidden" name="bookingId" value={booking.id} />
                     <input type="hidden" name="response" value="declined" />
-                    <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Decline all</button>
+                    <button className="min-h-11 w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Decline all</button>
                   </form>
                 </div>
               </article>
@@ -434,16 +435,16 @@ export default async function CarrierPage({
               ) : null}
 
               {assignment.assignment_status === "pending_carrier_confirmation" && !assignment.carrier_booking_id ? (
-                <div className="mt-4 flex gap-3">
-                  <form action={respondToAssignment}>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                  <form action={respondToAssignment} className="w-full sm:w-auto">
                     <input type="hidden" name="assignmentId" value={assignment.id} />
                     <input type="hidden" name="response" value="accepted" />
-                    <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Accept</button>
+                    <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Accept</button>
                   </form>
-                  <form action={respondToAssignment}>
+                  <form action={respondToAssignment} className="w-full sm:w-auto">
                     <input type="hidden" name="assignmentId" value={assignment.id} />
                     <input type="hidden" name="response" value="declined" />
-                    <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Decline</button>
+                    <button className="min-h-11 w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Decline</button>
                   </form>
                 </div>
               ) : null}
@@ -457,7 +458,7 @@ export default async function CarrierPage({
                     }
 
                     return (
-                      <form action={proposeAdditionalCharge} className="grid gap-3 sm:grid-cols-[120px_1fr]">
+                      <form action={proposeAdditionalCharge} className="grid gap-3 sm:grid-cols-2">
                         <input type="hidden" name="deliveryId" value={assignment.delivery_request_id} />
                         <input type="hidden" name="quoteId" value={quote.id} />
                         <div>
@@ -468,7 +469,7 @@ export default async function CarrierPage({
                           <label className="mb-2 block text-sm font-medium" htmlFor={`chargeReason-${assignment.id}`}>Reason</label>
                           <input id={`chargeReason-${assignment.id}`} name="reason" type="text" placeholder="Waiting time, special handling, or approved extra" className="w-full rounded-xl border border-slate-300 px-3 py-2" />
                         </div>
-                        <button className="sm:col-span-2 rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Propose additional charge</button>
+                        <button className="min-h-11 sm:col-span-2 rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Propose additional charge</button>
                       </form>
                     );
                   })()}
@@ -480,7 +481,7 @@ export default async function CarrierPage({
                       {!charge.carrier_agreed_at ? (
                         <form action={agreeToAdditionalCharge} className="mt-2">
                           <input type="hidden" name="chargeId" value={charge.id} />
-                          <button className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Agree to this charge</button>
+                          <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white sm:w-auto">Agree to this charge</button>
                         </form>
                       ) : (
                         <p className="mt-2 text-xs text-emerald-700">Carrier agreement recorded</p>
@@ -514,7 +515,7 @@ export default async function CarrierPage({
           Your carrier application is {applicationStatus}. You cannot apply again until an administrator approves your account.
         </p>
       ) : (
-      <form action={submitCarrierApplication} className="mt-8 space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <form action={submitCarrierApplication} className="mt-8 space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div>
           <label className="mb-2 block text-sm font-medium" htmlFor="carrierType">Carrier type</label>
           <select id="carrierType" name="carrierType" defaultValue={profile?.carrier_type ?? ""} className="w-full rounded-xl border border-slate-300 px-4 py-3" required>
@@ -581,6 +582,6 @@ export default async function CarrierPage({
         </button>
       </form>
       )}
-    </main>
+    </PageShell>
   );
 }
