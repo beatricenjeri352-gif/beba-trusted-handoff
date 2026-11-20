@@ -58,10 +58,11 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
 - Carrier application, carrier discovery, carrier selection, and assignment accept/decline are implemented.
 - Carrier assignment read access and atomic selection are prepared in `202611190006_delivery_assignment_permissions.sql`; it has not been applied.
 - The pure pricing engine and 21 acceptance tests are implemented.
-- Administrator pricing controls and negotiated-charge approval UI are implemented locally. The walking bands (see Approved Pricing Rules) are in `lib/pricing/walking-bands.ts`; the database quote function still uses the earlier formula until a new migration is approved.
+- Administrator pricing controls and negotiated-charge approval UI are implemented locally. The walking bands (see Approved Pricing Rules) are in `lib/pricing/walking-bands.ts`, and the database quote function `create_walking_delivery_quote` uses them (migration `202611190010`, applied). The legacy `create_delivery_quote` remains for existing quotes.
 - The 202611190003 pricing migration has been reviewed and updated locally; it has not been deployed.
 - Server-side Google Maps Routes API integration is verified for walking routes (live `computeRoutes` WALK request returned 200 with `distanceMeters`). Vehicle travel modes are not yet live-tested.
 - Sender quotes use walking distance only (Google Routes `WALK`) through `create_walking_delivery_quote`, with bands from `lib/pricing/walking-bands.ts`. Routes over 3 km return "Too far to walk".
+- The sender delivery page shows a walking price preview before any carrier is chosen. It is calculated on page load from the Google walking route and stores nothing. If Google fails, it shows "Estimate unavailable" and no price.
 - Migration `202611190010_walking_band_quotes.sql` is applied on the hosted Beba project. The user ran it through the Supabase SQL Editor, and a read-only check confirmed the function, the `pricing_model` column, and the legacy-only 5 km check.
 - No migration should be deployed without explicit user authorization.
 
