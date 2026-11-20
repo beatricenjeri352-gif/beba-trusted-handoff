@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import DeliveryLocationPickerLoader from "@/components/delivery-location-picker-loader";
+import { ProfileSwitcher } from "@/components/profile-switcher";
 
 function normalizePhone(value: string) {
   const digits = value.replace(/[^0-9]/g, "");
@@ -146,7 +147,8 @@ export default async function SenderPage({
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-12">
-      <div className="flex items-start justify-between gap-4">
+      <ProfileSwitcher current="sender" />
+      <div className="mt-6 flex items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-emerald-700">Sender workspace</p>
           <h1 className="mt-2 text-3xl font-bold">Deliveries</h1>
