@@ -40,6 +40,66 @@ interface ChargeRow {
   status: string;
 }
 
+type WalkingPricePreview =
+  | { status: "missing_points" }
+  | { status: "unavailable"; message: string }
+  | { status: "too_far"; distanceMetres: number }
+  | {
+      status: "priced";
+      distanceMetres: number;
+      feeCents: number;
+      commissionCents: number;
+      carrierEarningsCents: number;
+    };
+
+interface RoutePoint {
+  latitude: number | string | null;
+  longitude: number | string | null;
+}
+
+// Read-only preview: uses the Google walking route and the band table, and stores nothing.
+async function getWalkingPricePreview(
+  pickup: RoutePoint | undefined,
+  destination: RoutePoint | undefined,
+): Promise<WalkingPricePreview> {
+  if (pickup?.latitude == null || pickup?.longitude == null || destination?.latitude == null || destination?.longitude == null) {
+    return { status: "missing_points" };
+  }
+
+  let route;
+  try {
+    route = await getActualRouteDistanceMetres(
+      "walking",
+      { latitude: Number(pickup.latitude), longitude: Number(pickup.longitude) },
+      { latitude: Number(destination.latitude), longitude: Number(destination.longitude) },
+    );
+  } catch (error) {
+    return {
+      status: "unavailable",
+      message: error instanceof Error && error.message === "ROUTING_PROVIDER_NOT_CONFIGURED"
+        ? "Route distance is unavailable until the Google Maps key is configured on the server."
+        : "Estimate unavailable. A walking route could not be loaded, so no price is shown.",
+    };
+  }
+
+  const result = calculateWalkingDeliveryQuote(route.metres);
+  if (result.status === "too_far_to_walk") {
+    return { status: "too_far", distanceMetres: route.metres };
+  }
+
+  return {
+    status: "priced",
+    distanceMetres: route.metres,
+    feeCents: result.deliveryFeeCents,
+    commissionCents: result.commissionCents,
+    carrierEarningsCents: result.carrierEarningsCents,
+  };
+}
+
+function formatKes(cents: number): string {
+  return `KES ${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
 export default async function DeliveryDetailPage({
   params,
   searchParams,
@@ -99,6 +159,11 @@ export default async function DeliveryDetailPage({
     : { data: null };
 
   const negotiatedCharges = (negotiatedChargesRaw ?? []) as ChargeRow[];
+
+  const pricePreview = await getWalkingPricePreview(
+    stops?.find((stop) => stop.stop_type === "pickup"),
+    stops?.find((stop) => stop.stop_type === "destination"),
+  );
 
   const { data: carriers } = await supabase
     .from("carrier_profiles")
@@ -320,6 +385,30 @@ export default async function DeliveryDetailPage({
         <div className="mt-6">
           <h2 className="font-bold">Parcel</h2>
           <p className="mt-2 text-slate-600">{delivery.parcel_description}</p>
+        </div>
+
+        <div className="mt-6">
+          <h2 className="font-bold">Walking price preview</h2>
+          {pricePreview.status === "priced" ? (
+            <div className="mt-3 rounded-xl border border-slate-200 p-4">
+              <p className="text-2xl font-bold">{formatKes(pricePreview.feeCents)}</p>
+              <dl className="mt-3 grid grid-cols-2 gap-2 text-sm text-slate-600">
+                <div><dt>Walking distance</dt><dd className="font-semibold text-slate-900">{(pricePreview.distanceMetres / 1000).toFixed(2)} km</dd></div>
+                <div><dt>Delivery fee</dt><dd className="font-semibold text-slate-900">{formatKes(pricePreview.feeCents)}</dd></div>
+                <div><dt>Beba commission (10%)</dt><dd className="font-semibold text-slate-900">{formatKes(pricePreview.commissionCents)}</dd></div>
+                <div><dt>Carrier earns</dt><dd className="font-semibold text-slate-900">{formatKes(pricePreview.carrierEarningsCents)}</dd></div>
+              </dl>
+              <p className="mt-3 text-xs text-slate-500">Shown before choosing a carrier. Agreement is between you and the carrier.</p>
+            </div>
+          ) : pricePreview.status === "too_far" ? (
+            <p className="mt-3 rounded-xl bg-amber-50 p-4 text-sm font-medium text-amber-800">
+              Too far to walk ({(pricePreview.distanceMetres / 1000).toFixed(2)} km). Choose a car, tuktuk, or boda instead.
+            </p>
+          ) : pricePreview.status === "unavailable" ? (
+            <p className="mt-3 rounded-xl bg-amber-50 p-4 text-sm font-medium text-amber-800">{pricePreview.message}</p>
+          ) : (
+            <p className="mt-3 text-sm text-slate-600">Set the pickup and drop-off points to see the walking price.</p>
+          )}
         </div>
 
         <div className="mt-6">
