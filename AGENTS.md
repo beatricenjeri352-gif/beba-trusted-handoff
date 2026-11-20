@@ -62,7 +62,7 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
 - The 202611190003 pricing migration has been reviewed and updated locally; it has not been deployed.
 - Server-side Google Maps Routes API integration is implemented locally; live API access has not been tested.
 - Sender quotes use walking distance only (Google Routes `WALK`) through `create_walking_delivery_quote`, with bands from `lib/pricing/walking-bands.ts`. Routes over 3 km return "Too far to walk".
-- Migration `202611190010_walking_band_quotes.sql` is a local draft. It has not been validated against Postgres or applied to hosted.
+- Migration `202611190010_walking_band_quotes.sql` was run on the hosted Beba project by the user through the Supabase SQL Editor (reported "Success. No rows returned"). Not yet verified from the database side; the CLI migration history does not record it.
 - No migration should be deployed without explicit user authorization.
 
 ## Database and Migration Rules
