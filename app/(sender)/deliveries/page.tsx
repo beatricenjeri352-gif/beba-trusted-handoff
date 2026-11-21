@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import DeliveryLocationPickerLoader from "@/components/delivery-location-picker-loader";
+import { FormSection } from "@/components/form-section";
 import { PageShell } from "@/components/page-shell";
 import { ProfileSwitcher } from "@/components/profile-switcher";
 
@@ -172,7 +173,7 @@ export default async function SenderPage({
             : params.reason
               ? `The delivery could not be saved. Database code: ${params.reason}.`
             : params.error === "location-pin-required"
-              ? "Pin both the pickup point and delivery destination on the map or use your current location."
+              ? "Choose a suggested pickup and drop-off, or use your current location, so both places can be saved."
             : params.error === "invalid-weight"
               ? "Enter a valid weight."
               : params.error === "invalid-receiver-phone"
@@ -185,50 +186,55 @@ export default async function SenderPage({
         <form action={createDelivery} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <h2 className="text-xl font-bold">Create a delivery request</h2>
 
-          <div>
-            <label className="mb-2 block text-sm font-medium" htmlFor="deliveryMethod">Delivery method</label>
-            <select id="deliveryMethod" name="deliveryMethod" className="w-full rounded-xl border border-slate-300 px-4 py-3">
-              <option value="within_town">Within town</option>
-              <option value="to_stage">To a stage</option>
-              <option value="intertown">Inter-town</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium" htmlFor="parcelDescription">Parcel description</label>
-            <textarea id="parcelDescription" name="parcelDescription" rows={3} className="w-full rounded-xl border border-slate-300 px-4 py-3" required />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
+          <FormSection title="1. Parcel" defaultOpen>
             <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="parcelSize">Parcel size</label>
-              <select id="parcelSize" name="parcelSize" className="w-full rounded-xl border border-slate-300 px-4 py-3">
-                <option value="">Select size</option>
-                <option value="small">Small</option>
-                <option value="medium">Medium</option>
-                <option value="large">Large</option>
+              <label className="mb-2 block text-sm font-medium" htmlFor="deliveryMethod">Delivery method</label>
+              <select id="deliveryMethod" name="deliveryMethod" className="w-full rounded-xl border border-slate-300 px-4 py-3">
+                <option value="within_town">Within town</option>
+                <option value="to_stage">To a stage</option>
+                <option value="intertown">Inter-town</option>
               </select>
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="weightKg">Weight (kg)</label>
-              <input id="weightKg" name="weightKg" type="number" min="0" step="0.1" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-            </div>
-          </div>
 
-          <DeliveryLocationPickerLoader name="pickup" label="Pickup location" locationName="" landmark="" />
-
-          <DeliveryLocationPickerLoader name="destination" label="Delivery destination" locationName="" landmark="" />
-
-          <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="receiverName">Receiver name</label>
-              <input id="receiverName" name="receiverName" type="text" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+              <label className="mb-2 block text-sm font-medium" htmlFor="parcelDescription">Parcel description</label>
+              <textarea id="parcelDescription" name="parcelDescription" rows={3} className="w-full rounded-xl border border-slate-300 px-4 py-3" required />
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="receiverPhone">Receiver phone</label>
-              <input id="receiverPhone" name="receiverPhone" type="tel" inputMode="tel" placeholder="0712 345 678" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium" htmlFor="parcelSize">Parcel size</label>
+                <select id="parcelSize" name="parcelSize" className="w-full rounded-xl border border-slate-300 px-4 py-3">
+                  <option value="">Select size</option>
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium" htmlFor="weightKg">Weight (kg)</label>
+                <input id="weightKg" name="weightKg" type="number" min="0" step="0.1" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+              </div>
             </div>
-          </div>
+          </FormSection>
+
+          <FormSection title="2. Pickup" defaultOpen>
+            <DeliveryLocationPickerLoader name="pickup" label="Pickup location" locationName="" landmark="" />
+          </FormSection>
+
+          <FormSection title="3. Drop-off" defaultOpen>
+            <DeliveryLocationPickerLoader name="destination" label="Delivery destination" locationName="" landmark="" />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium" htmlFor="receiverName">Receiver name</label>
+                <input id="receiverName" name="receiverName" type="text" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium" htmlFor="receiverPhone">Receiver phone</label>
+                <input id="receiverPhone" name="receiverPhone" type="tel" inputMode="tel" placeholder="0712 345 678" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+              </div>
+            </div>
+          </FormSection>
 
           <button className="w-full rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white">Create delivery</button>
         </form>

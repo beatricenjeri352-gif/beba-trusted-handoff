@@ -1,53 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { useEffect, useRef, useState } from "react";
 
-const defaultIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
+import type { PlaceSuggestion } from "@/lib/location/search";
 
 interface LocationPickerProps {
   name: string;
   label: string;
   locationName: string;
   landmark: string;
-}
-
-interface SearchResult {
-  place_id: number | string;
-  display_name: string;
-  lat: string;
-  lon: string;
-}
-
-function MapPositionHandler({ position }: { position: [number, number] }) {
-  const map = useMap();
-
-  useEffect(() => {
-    map.setView(position, 15, { animate: true });
-  }, [map, position]);
-
-  return null;
-}
-
-function MapClickHandler({
-  onSelect,
-}: {
-  onSelect: (latitude: number, longitude: number) => void;
-}) {
-  useMapEvents({
-    click(event) {
-      onSelect(event.latlng.lat, event.latlng.lng);
-    },
-  });
-  return null;
 }
 
 export default function DeliveryLocationPicker({
@@ -59,59 +20,64 @@ export default function DeliveryLocationPicker({
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [status, setStatus] = useState("");
-  const [position, setPosition] = useState<[number, number]>([-1.286389, 36.817223]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [query, setQuery] = useState(locationName);
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedAddress, setSelectedAddress] = useState(locationName);
+  const skipSearch = useRef(false);
 
-  function selectLocation(nextLatitude: number, nextLongitude: number) {
-    setLatitude(nextLatitude.toFixed(6));
-    setLongitude(nextLongitude.toFixed(6));
-    setPosition([nextLatitude, nextLongitude]);
-    setStatus("Location pinned.");
+  function applyPlace(place: PlaceSuggestion, message: string) {
+    skipSearch.current = true;
+    setQuery(place.label);
+    setLatitude(place.latitude.toFixed(6));
+    setLongitude(place.longitude.toFixed(6));
+    setSuggestions([]);
+    setStatus(message);
   }
 
-  async function searchLocations() {
-    const query = searchQuery.trim();
-    if (query.length < 3) {
-      setStatus("Enter at least 3 characters to search.");
-      setSearchResults([]);
+  useEffect(() => {
+    if (skipSearch.current) {
+      skipSearch.current = false;
       return;
     }
 
-    setSearching(true);
-    setStatus("Searching locations...");
-
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=ke&q=${encodeURIComponent(query)}`,
-        { headers: { Accept: "application/json" } },
-      );
-
-      if (!response.ok) throw new Error("Location search failed");
-
-      const results = (await response.json()) as SearchResult[];
-      setSearchResults(results);
-      setStatus(results.length ? `${results.length} locations found.` : "No matching locations found.");
-    } catch {
-      setSearchResults([]);
-      setStatus("Location search is unavailable. You can still pin the map or use GPS.");
-    } finally {
-      setSearching(false);
+    const text = query.trim();
+    if (text.length < 3) {
+      return;
     }
-  }
 
-  function chooseSearchResult(result: SearchResult) {
-    const nextLatitude = Number(result.lat);
-    const nextLongitude = Number(result.lon);
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSearching(true);
+      setStatus("Looking up matching places...");
+      try {
+        const response = await fetch(`/api/location-search?q=${encodeURIComponent(text)}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("search failed");
+        const payload = await response.json() as { suggestions?: PlaceSuggestion[] };
+        const next = payload.suggestions ?? [];
+        setSuggestions(next);
+        setStatus(next.length ? `${next.length} matching ${next.length === 1 ? "place" : "places"}` : "No matching places found.");
+      } catch (error) {
+        if ((error as { name?: string }).name === "AbortError") return;
+        setSuggestions([]);
+        setStatus("Place search is unavailable. You can still use your current location.");
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
 
-    if (!Number.isFinite(nextLatitude) || !Number.isFinite(nextLongitude)) return;
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query]);
 
-    setSelectedAddress(result.display_name);
-    setSearchResults([]);
-    selectLocation(nextLatitude, nextLongitude);
-    setStatus("Location selected from search.");
+  function onQueryChange(value: string) {
+    setQuery(value);
+    setLatitude("");
+    setLongitude("");
+    setSuggestions([]);
   }
 
   function useCurrentLocation() {
@@ -122,75 +88,72 @@ export default function DeliveryLocationPicker({
 
     setStatus("Getting current location...");
     navigator.geolocation.getCurrentPosition(
-      (result) => {
-        selectLocation(result.coords.latitude, result.coords.longitude);
+      async (result) => {
+        const lat = result.coords.latitude;
+        const lng = result.coords.longitude;
+        try {
+          const response = await fetch(`/api/location-search?lat=${lat}&lng=${lng}`);
+          const payload = await response.json() as { suggestions?: PlaceSuggestion[] };
+          const place = payload.suggestions?.[0];
+          if (place) {
+            applyPlace(place, "Current location selected.");
+            return;
+          }
+        } catch {
+          // Keep coordinates even if the address lookup fails.
+        }
+        applyPlace({
+          id: "gps",
+          label: "Current location",
+          kind: "Location",
+          latitude: lat,
+          longitude: lng,
+        }, "Current location selected.");
       },
       () => setStatus("Location permission was denied or unavailable."),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 },
     );
   }
 
+  const visibleSuggestions = query.trim().length < 3 ? [] : suggestions;
+
   return (
-    <fieldset className="rounded-2xl border border-slate-200 p-4">
-      <legend className="px-1 text-sm font-bold">{label}</legend>
+    <fieldset>
+      <legend className="mb-2 text-sm font-medium">{label}</legend>
 
-      <div>
-        <label className="mb-2 block text-sm font-medium" htmlFor={`${name}Search`}>Search location</label>
-        <div className="flex gap-2">
-          <input
-            id={`${name}Search`}
-            type="search"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void searchLocations();
-              }
-            }}
-            placeholder="Search building, road, stage, or town"
-            className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3"
-          />
-          <button type="button" onClick={() => void searchLocations()} disabled={searching} aria-label={searching ? "Searching" : "Search location"} title="Search location" className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-300 px-4 py-3 disabled:opacity-60">
-            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="7" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-          </button>
-        </div>
-        <button type="button" onClick={useCurrentLocation} className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3 text-left text-sm font-semibold">
-          Use my current location
-        </button>
+      <label className="mb-2 block text-sm font-medium" htmlFor={`${name}Location`}>Search place, road, stage, or town</label>
+      <input
+        id={`${name}Location`}
+        name={`${name}Location`}
+        type="search"
+        autoComplete="off"
+        value={query}
+        onChange={(event) => onQueryChange(event.target.value)}
+        placeholder="Start typing a place name"
+        className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3"
+        required
+      />
 
-        {searchResults.length ? (
-          <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
-            {searchResults.map((result) => (
+      {visibleSuggestions.length ? (
+        <ul className="mt-2 overflow-hidden rounded-xl border border-slate-200">
+          {visibleSuggestions.map((place) => (
+            <li key={place.id} className="border-b border-slate-100 last:border-b-0">
               <button
-                key={String(result.place_id)}
                 type="button"
-                onClick={() => chooseSearchResult(result)}
-                className="block w-full break-words border-b border-slate-100 px-3 py-3 text-left text-sm last:border-b-0 hover:bg-slate-50"
+                onClick={() => applyPlace(place, `${place.kind} selected.`)}
+                className="block w-full break-words px-3 py-3 text-left hover:bg-slate-50"
               >
-                {result.display_name}
+                <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{place.kind}</span>
+                <span className="mt-1 block text-sm">{place.label}</span>
               </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
-      <div className="mt-4">
-        <label className="mb-2 block text-sm font-medium" htmlFor={`${name}Location`}>Location or street</label>
-        <input
-          id={`${name}Location`}
-          name={`${name}Location`}
-          type="text"
-          value={selectedAddress}
-          onChange={(event) => setSelectedAddress(event.target.value)}
-          placeholder="Street, gate, building, or nearby place"
-          className="w-full rounded-xl border border-slate-300 px-4 py-3"
-          required
-        />
-      </div>
+      <button type="button" onClick={useCurrentLocation} className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3 text-left text-sm font-semibold">
+        Use my current location
+      </button>
 
       <div className="mt-4">
         <label className="mb-2 block text-sm font-medium" htmlFor={`${name}Landmark`}>Nearest commonly known building or landmark</label>
@@ -200,30 +163,16 @@ export default function DeliveryLocationPicker({
           type="text"
           defaultValue={landmark}
           placeholder="Example: Naivas, City Hall, main stage"
-          className="w-full rounded-xl border border-slate-300 px-4 py-3"
+          className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3"
         />
       </div>
 
       <input type="hidden" name={`${name}Latitude`} value={latitude} />
       <input type="hidden" name={`${name}Longitude`} value={longitude} />
 
-      <div className="mt-4 h-60 overflow-hidden rounded-xl border border-slate-300 sm:h-[280px]">
-        <MapContainer center={position} zoom={13} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
-          <TileLayer
-            attribution="&copy; OpenStreetMap contributors"
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          <MapPositionHandler position={position} />
-          <MapClickHandler onSelect={selectLocation} />
-          {latitude && longitude ? <Marker position={position} icon={defaultIcon} /> : null}
-        </MapContainer>
-      </div>
-
-      <div className="mt-3 flex items-center justify-end gap-3">
-        <p className="text-right text-xs text-slate-600" role="status">
-          {status || "Tap the map to pin this location."}
-        </p>
-      </div>
+      <p className="mt-2 text-xs text-slate-600" role="status">
+        {searching ? "Looking up matching places..." : status || "Type at least 3 letters, then choose a suggestion."}
+      </p>
     </fieldset>
   );
 }
