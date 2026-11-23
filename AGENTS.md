@@ -67,17 +67,16 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
 - Migration `202611190011_carrier_bookings.sql` is applied on the hosted Beba project through the SQL Editor. It adds `carrier_bookings`, `delivery_assignments.carrier_booking_id`, and the functions `create_carrier_booking`, `add_delivery_to_carrier_booking`, and `respond_to_carrier_booking`. Carrier accept or decline applies to every delivery in a booking. Sender pages add deliveries to an open booking for the same carrier. The Supabase CLI migration history still needs repair for `0010` and `0011`.
 - Carrier distance and reviews (`BE_CARRIER_distance_reviews`): carriers publish live location while online; senders see carrier road distance to pickup (nearest first); carriers see road distance to each pickup; senders rate completed deliveries (1–5 stars, optional comment). Walking uses walking routes; bicycle uses bicycle routes; motorbike, car, and other vehicles use driving. Public ratings omit `sender_user_id`; only the reviewed carrier and administrators can read it. Migration `202611190012_carrier_location_and_reviews.sql` is applied on hosted (SQL Editor). Read-only check: location and review tables exist, review RLS is on, two review policies, public view has no `sender_user_id`. Vehicle rates are deferred. The Supabase CLI migration history still needs repair for `0010`, `0011`, and `0012`.
 - App pages use a shared mobile-first shell (`components/page-shell.tsx`): device-width viewport, safe-area padding, stacked actions under `sm`, and 44px tap targets. 
-- The sender and carrier workspace headers have an account menu with sender/carrier switching and sign-out. Profile and Settings are labeled "Coming soon"; switching remains unavailable for rejected or suspended carrier profiles.
+- The sender and carrier workspace headers have an account menu with sender/carrier switching and sign-out. The sender menu contains account details and recent deliveries; profile editing and settings are not yet available. Switching remains unavailable for rejected or suspended carrier profiles.
+- The sender landing page greets the user by first name when available and opens the existing delivery wizard on the same page. Returning home keeps the in-progress wizard state.
 - Sender notifications use `202611190013_sender_notifications.sql`. The user reported applying it and verifying the table, RLS, policies, and triggers through the hosted SQL Editor; the signed-in panel loaded, but a hosted unread notification has not yet been tested. New delivery status changes, declined assignments, and proposed additional charges create account-level updates; opening an update marks it read. The panel also shows recent active deliveries. Existing history is not backfilled. The Supabase CLI migration history needs repair for `0013`.
-- **Delivery creation workflow (`BE_DELIVERY_multistep_wizard`, tested and verified):**
-  - Sender delivery creation is now a multi-step wizard with visual progress tracking
+- **Delivery creation workflow:**
+  - Sender delivery creation uses one page with expandable sections; validated completed sections show a green tick and can be reopened for edits
   - Step 1: Parcel Details (delivery method, description, size, weight)
   - Step 2: Pickup Location (place search, GPS option, landmark description)
   - Step 3: Drop-off Details (destination, landmark, receiver name, receiver phone)
-  - Progress tracker uses `OrderTracking` component (lucide-react icons: CheckCircle2 for completed, Circle for pending)
-  - Form state persists across step navigation (Back/Next buttons preserve entered data)
-  - Final step button changes from "Next" to "Create Delivery" to submit via server action
-  - Success screen displays tracking number format (BEB-{timestamp}) with "Find a Courier" button
+  - Form state persists when navigating between sections; both landmarks are optional
+  - The final section submits via a server action; the success screen links to carrier selection on the new delivery
   - Pickup and drop-off use typed place suggestions (Nominatim) and GPS, with no map on wizard
   - Vehicle rates are still deferred.
 - **Authentication workflow (`BE_AUTH_role_selection`, tested and verified):** 
@@ -166,6 +165,7 @@ Older documentation conflicts with the approved prompt:
 ## Outstanding Blockers
 
 - Supabase migration deployment requires renewed CLI authentication.
+- The hosted `users` table denied the signed-in sender's profile query (permission error 42501). The sender greeting can use auth metadata, but profile table access needs investigation.
 - Google Maps Routes API access and billing have not been verified in the target environment.
 - Failed/cancelled/disputed delivery commission policy timing needs later confirmation.
 - M-Pesa reconciliation is intentionally excluded until pricing and successful-delivery commission are complete.
@@ -173,5 +173,4 @@ Older documentation conflicts with the approved prompt:
 - Supabase "Confirm email" toggle persistence in hosted environment must be verified (network issue prevented confirmation during toggle).
 - Delivery wizard form submission and success screen display need end-to-end testing (form data must be validated and saved to database).
 - Location picker integration with wizard state needs verification (place search suggestions must properly update form state).
-- "Find a Courier" button on success screen needs to route to carrier selection/discovery page (not yet implemented).
 
