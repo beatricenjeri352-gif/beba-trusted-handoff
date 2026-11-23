@@ -9,6 +9,7 @@ interface LocationPickerProps {
   label: string;
   locationName: string;
   landmark: string;
+  onLocationChange?: (location: string, latitude: string, longitude: string, landmark: string) => void;
 }
 
 export default function DeliveryLocationPicker({
@@ -16,11 +17,13 @@ export default function DeliveryLocationPicker({
   label,
   locationName,
   landmark,
+  onLocationChange,
 }: LocationPickerProps) {
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState(locationName);
+  const [localLandmark, setLocalLandmark] = useState(landmark);
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const skipSearch = useRef(false);
@@ -32,6 +35,8 @@ export default function DeliveryLocationPicker({
     setLongitude(place.longitude.toFixed(6));
     setSuggestions([]);
     setStatus(message);
+    // Call the callback to update parent form
+    onLocationChange?.(place.label, place.latitude.toFixed(6), place.longitude.toFixed(6), landmark);
   }
 
   useEffect(() => {
@@ -156,12 +161,16 @@ export default function DeliveryLocationPicker({
       </button>
 
       <div className="mt-4">
-        <label className="mb-2 block text-sm font-medium" htmlFor={`${name}Landmark`}>Nearest commonly known building or landmark</label>
+        <label className="mb-2 block text-sm font-medium" htmlFor={`${name}Landmark`}>Nearest commonly known building or landmark <span className="text-xs font-normal text-slate-500">(optional)</span></label>
         <input
           id={`${name}Landmark`}
           name={`${name}Landmark`}
           type="text"
-          defaultValue={landmark}
+          value={localLandmark}
+          onChange={(e) => {
+            setLocalLandmark(e.target.value);
+            onLocationChange?.(query, latitude, longitude, e.target.value);
+          }}
           placeholder="Example: Naivas, City Hall, main stage"
           className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3"
         />

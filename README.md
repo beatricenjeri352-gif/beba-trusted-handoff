@@ -603,6 +603,8 @@ The prototype uses browser memory and demonstration data. It does not provide re
 
 ## Development workflow
 
+- The Next.js app's mobile-style welcome and email authentication are described in [Supabase setup](docs/04-technical-design/supabase-setup.md). This web app is separate from the static prototype and is not yet a Play Store app.
+- The app already uses TypeScript and Tailwind CSS. Its reusable animated authentication component is in `components/ui/`; the shadcn CLI is not initialized. To add shadcn components later, run `npx shadcn@latest init` and review the generated configuration before applying it.
 - Create work on a feature branch rather than `main`.
 - Keep documentation in the numbered `docs/` structure.
 - Update relative links when files or directories move.

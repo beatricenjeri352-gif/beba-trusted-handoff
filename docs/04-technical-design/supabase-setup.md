@@ -55,12 +55,14 @@ For the temporary email-first journey:
 2. Enable Email provider sign-in.
 3. Configure the Site URL for local and production hosts.
 4. Add `http://localhost:3000/**` to redirect URLs during development.
-5. Choose whether email confirmation is required.
-6. Configure a sender and templates for confirmation and password-reset emails.
+5. For this temporary test flow, disable **Confirm email** and save. This change must be made in the target Supabase project; changing the UI does not change the hosted setting.
+6. Configure a sender and password-reset template separately. Supabase's default email service has restrictions; configure custom SMTP before wider use.
 
-The current login page supports email/password signup, sign-in, and password reset. Gmail addresses are accepted like any other email address.
+The mobile-style welcome screen links to email/password signup and sign-in. New users choose sender or carrier as their starting journey; both share one account and carrier applicants must still be approved. When email confirmation is disabled, successful signup provides a session and opens the chosen journey. If no session is returned, the UI reports that signup could not complete directly. Previously unconfirmed accounts may need separate administrator attention.
 
-Phone OTP support remains available for a later stage, but SMS provider configuration is not required for current email login testing.
+**Testing only:** disabling confirmation means email ownership is not verified, even if Supabase marks the address confirmed. Attackers can register addresses they do not own. Restore a verified signup flow before production use. Face and ID verification are a preview only; the app does not collect identity documents or biometric data. The app does not verify a phone number via email.
+
+Google sign-in requires a Google web OAuth client, the Supabase Google provider, and allowed app redirect URLs for `/auth/callback` and `/auth/callback?role=carrier`; follow the [Supabase Google sign-in guide](https://supabase.com/docs/guides/auth/social-login/auth-google). Do not commit OAuth secrets. Google sign-in is not ready until that configuration is completed and tested. Phone OTP and phone/username sign-in are deferred.
 
 ## 5. Security rules
 

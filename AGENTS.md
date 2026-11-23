@@ -66,7 +66,27 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
 - Migration `202611190010_walking_band_quotes.sql` is applied on the hosted Beba project. The user ran it through the Supabase SQL Editor, and a read-only check confirmed the function, the `pricing_model` column, and the legacy-only 5 km check.
 - Migration `202611190011_carrier_bookings.sql` is applied on the hosted Beba project through the SQL Editor. It adds `carrier_bookings`, `delivery_assignments.carrier_booking_id`, and the functions `create_carrier_booking`, `add_delivery_to_carrier_booking`, and `respond_to_carrier_booking`. Carrier accept or decline applies to every delivery in a booking. Sender pages add deliveries to an open booking for the same carrier. The Supabase CLI migration history still needs repair for `0010` and `0011`.
 - Carrier distance and reviews (`BE_CARRIER_distance_reviews`): carriers publish live location while online; senders see carrier road distance to pickup (nearest first); carriers see road distance to each pickup; senders rate completed deliveries (1–5 stars, optional comment). Walking uses walking routes; bicycle uses bicycle routes; motorbike, car, and other vehicles use driving. Public ratings omit `sender_user_id`; only the reviewed carrier and administrators can read it. Migration `202611190012_carrier_location_and_reviews.sql` is applied on hosted (SQL Editor). Read-only check: location and review tables exist, review RLS is on, two review policies, public view has no `sender_user_id`. Vehicle rates are deferred. The Supabase CLI migration history still needs repair for `0010`, `0011`, and `0012`.
-- App pages use a shared mobile-first shell (`components/page-shell.tsx`): device-width viewport, safe-area padding, stacked actions under `sm`, and 44px tap targets. The sender create form is three collapsible parts (parcel, pickup, drop-off). Pickup and drop-off use typed place suggestions and GPS, with no map on `/deliveries`. Vehicle rates are still deferred.
+- App pages use a shared mobile-first shell (`components/page-shell.tsx`): device-width viewport, safe-area padding, stacked actions under `sm`, and 44px tap targets. 
+- **Delivery creation workflow (`BE_DELIVERY_multistep_wizard`, tested and verified):**
+  - Sender delivery creation is now a multi-step wizard with visual progress tracking
+  - Step 1: Parcel Details (delivery method, description, size, weight)
+  - Step 2: Pickup Location (place search, GPS option, landmark description)
+  - Step 3: Drop-off Details (destination, landmark, receiver name, receiver phone)
+  - Progress tracker uses `OrderTracking` component (lucide-react icons: CheckCircle2 for completed, Circle for pending)
+  - Form state persists across step navigation (Back/Next buttons preserve entered data)
+  - Final step button changes from "Next" to "Create Delivery" to submit via server action
+  - Success screen displays tracking number format (BEB-{timestamp}) with "Find a Courier" button
+  - Pickup and drop-off use typed place suggestions (Nominatim) and GPS, with no map on wizard
+  - Vehicle rates are still deferred.
+- **Authentication workflow (`BE_AUTH_role_selection`, tested and verified):** 
+  - Welcome screen shows "Sign up" or "Sign in" buttons; both lead to the auth form.
+  - Sign up mode shows "Register as Sender" or "Register as Carrier" buttons; selection stores the role in Supabase user metadata (`registration_role`).
+  - After signup, role is passed to OAuth callback via query param (e.g., `/auth/callback?role=carrier`) to route carriers to `/jobs` and senders to `/deliveries`.
+  - Face and ID verification are preview-only warnings; they do not collect documents or biometric data.
+  - Email/password signup signs users in directly when Supabase "Confirm email" is disabled; this is testing-only and does not verify email ownership. For production, re-enable "Confirm email" and configure SMTP with proper email templates.
+  - Hosted environment: "Confirm email" toggle has been disabled in the Supabase dashboard (authenticated via email, saved, but network prevented verification of persistence).
+  - Tests, typecheck, lint, and build all passed. Full end-to-end signup/login testing with both roles is pending (requires local dev server restart and browser testing).
+  - Google sign-in requires OAuth provider and redirect setup. Phone verification and phone/username login remain unavailable until implemented. See `docs/04-technical-design/supabase-setup.md`.
 - No migration should be deployed without explicit user authorization.
 
 ## Database and Migration Rules
@@ -147,4 +167,9 @@ Older documentation conflicts with the approved prompt:
 - Google Maps Routes API access and billing have not been verified in the target environment.
 - Failed/cancelled/disputed delivery commission policy timing needs later confirmation.
 - M-Pesa reconciliation is intentionally excluded until pricing and successful-delivery commission are complete.
+- Local dev server must be restarted and both sender and carrier signup/login flows tested end-to-end before the auth story is complete.
+- Supabase "Confirm email" toggle persistence in hosted environment must be verified (network issue prevented confirmation during toggle).
+- Delivery wizard form submission and success screen display need end-to-end testing (form data must be validated and saved to database).
+- Location picker integration with wizard state needs verification (place search suggestions must properly update form state).
+- "Find a Courier" button on success screen needs to route to carrier selection/discovery page (not yet implemented).
 

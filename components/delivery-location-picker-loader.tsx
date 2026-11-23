@@ -7,6 +7,7 @@ interface LocationPickerLoaderProps {
   label: string;
   locationName: string;
   landmark: string;
+  onLocationChange?: (location: string, latitude: string, longitude: string, landmark: string) => void;
 }
 
 export default function DeliveryLocationPickerLoader(props: LocationPickerLoaderProps) {
