@@ -78,9 +78,12 @@ Authorised team members responsible for approving carrier and business applicati
 - Account permissions must reflect the user's approved roles.
 
 The current sender and carrier workspaces provide an account menu for switching
-workspaces and signing out. Profile and Settings are not yet available.
+workspaces and signing out. The sender menu also shows account details and recent
+deliveries. Profile editing and Settings are not yet available.
 The sender notification panel shows recent active deliveries and account-level
 delivery updates once the sender notifications migration is applied.
+The sender home welcomes the user and opens the delivery creation wizard on the
+same page.
 
 ### 6.2 Carrier profiles
 
@@ -133,6 +136,10 @@ A sender should be able to:
 - Add handling instructions.
 - Review the calculated delivery price.
 - Publish the request.
+
+The current sender form groups parcel, pickup, and drop-off/receiver details in
+expandable sections. Pickup and drop-off landmarks are optional. Once the
+request is saved, the sender can open its carrier selection section.
 
 ### 8.2 Delivery methods
 

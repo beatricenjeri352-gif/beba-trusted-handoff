@@ -1,345 +1,261 @@
-"use client"
+"use client";
 
-import { useState, useTransition } from "react"
-import { createDeliveryAction } from "@/lib/actions/delivery"
-import { OrderTracking } from "@/components/ui/order-tracking"
-import DeliveryLocationPickerLoader from "@/components/delivery-location-picker-loader"
-import { ChevronRight, Package, MapPin, User, CheckCircle2 } from "lucide-react"
+import { CheckCircle2, ChevronDown, Package, Truck } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useRef, useState, useTransition } from "react";
 
-interface DeliveryFormState {
-  deliveryMethod: string
-  parcelDescription: string
-  parcelSize: string
-  weightKg: string
-  pickupLocation: string
-  pickupLandmark: string
-  pickupLatitude: string
-  pickupLongitude: string
-  destinationLocation: string
-  destinationLandmark: string
-  destinationLatitude: string
-  destinationLongitude: string
-  receiverName: string
-  receiverPhone: string
-}
+import DeliveryLocationPickerLoader from "@/components/delivery-location-picker-loader";
+import { createDeliveryAction } from "@/lib/actions/delivery";
+import { validateDeliveryStep, type DeliveryFormState, type DeliveryStep } from "@/lib/delivery/validation";
+
+const emptyForm: DeliveryFormState = {
+  deliveryMethod: "within_town",
+  parcelDescription: "",
+  parcelSize: "",
+  weightKg: "",
+  pickupLocation: "",
+  pickupLandmark: "",
+  pickupLatitude: "",
+  pickupLongitude: "",
+  destinationLocation: "",
+  destinationLandmark: "",
+  destinationLatitude: "",
+  destinationLongitude: "",
+  receiverName: "",
+  receiverPhone: "",
+};
+
+const steps: { number: DeliveryStep; title: string }[] = [
+  { number: 1, title: "Parcel details" },
+  { number: 2, title: "Pickup location" },
+  { number: 3, title: "Drop-off and receiver" },
+];
 
 export function DeliveryWizard() {
-  const [currentStep, setCurrentStep] = useState(1)
-  const [isComplete, setIsComplete] = useState(false)
-  const [trackingNumber, setTrackingNumber] = useState("")
-  const [isPending, startTransition] = useTransition()
-  const [formData, setFormData] = useState<DeliveryFormState>({
-    deliveryMethod: "within_town",
-    parcelDescription: "",
-    parcelSize: "",
-    weightKg: "",
-    pickupLocation: "",
-    pickupLandmark: "",
-    pickupLatitude: "",
-    pickupLongitude: "",
-    destinationLocation: "",
-    destinationLandmark: "",
-    destinationLatitude: "",
-    destinationLongitude: "",
-    receiverName: "",
-    receiverPhone: "",
-  })
+  const [currentStep, setCurrentStep] = useState<DeliveryStep>(1);
+  const [highestStep, setHighestStep] = useState<DeliveryStep>(1);
+  const [formData, setFormData] = useState<DeliveryFormState>(emptyForm);
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ id: string; tracking: string } | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const stepButtons = useRef<(HTMLButtonElement | null)[]>([]);
+  const shouldFocusStep = useRef(false);
 
-  const steps = [
-    { name: "Parcel details", timestamp: currentStep >= 1 ? "In progress" : "Pending", isCompleted: currentStep > 1 },
-    { name: "Pickup location", timestamp: currentStep >= 2 ? "In progress" : "Pending", isCompleted: currentStep > 2 },
-    { name: "Drop-off details", timestamp: currentStep >= 3 ? "In progress" : "Pending", isCompleted: currentStep > 3 },
-  ]
-
-  const handleNext = () => {
-    if (currentStep < 3) {
-      setCurrentStep(currentStep + 1)
+  useEffect(() => {
+    if (shouldFocusStep.current) {
+      stepButtons.current[currentStep]?.focus();
+      shouldFocusStep.current = false;
     }
+  }, [currentStep]);
+
+  function updateForm(values: Partial<DeliveryFormState>) {
+    setFormData((previous) => ({ ...previous, ...values }));
+    setError(null);
   }
 
-  const handlePrev = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1)
+  function openStep(step: DeliveryStep) {
+    if (step !== currentStep) {
+      shouldFocusStep.current = true;
+      setCurrentStep(step);
     }
+    setError(null);
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!formData.parcelDescription || !formData.pickupLocation || !formData.destinationLocation) {
-      alert("Please fill all required fields")
-      return
+  function continueTo(step: 2 | 3) {
+    const message = validateDeliveryStep(currentStep, formData);
+    if (message) {
+      setError(message);
+      return;
     }
+    if (step > highestStep) setHighestStep(step);
+    openStep(step);
+  }
 
-    if (!formData.pickupLatitude || !formData.pickupLongitude || !formData.destinationLatitude || !formData.destinationLongitude) {
-      alert("Please select both pickup and drop-off locations from suggestions")
-      return
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    for (const step of [1, 2, 3] as const) {
+      const message = validateDeliveryStep(step, formData);
+      if (message) {
+        openStep(step);
+        setError(message);
+        return;
+      }
     }
 
     startTransition(async () => {
       try {
-        const result = await createDeliveryAction(formData)
+        const result = await createDeliveryAction(formData);
         if (result.error) {
-          alert(`Error: ${result.error}`)
-          return
+          const messages: Record<string, string> = {
+            "delivery-required": "Please complete the required delivery details.",
+            "location-pin-required": "Please select both locations from the suggestions.",
+            "invalid-weight": "Enter a valid weight of zero or more.",
+            "invalid-receiver-phone": "Enter a valid receiver phone number or leave it blank.",
+            "delivery-save-failed": "Your request could not be saved. Please try again.",
+          };
+          setError(messages[result.error] ?? "Your request could not be created. Please try again.");
+          return;
         }
-        if (result.success && result.tracking) {
-          setTrackingNumber(result.tracking)
-          setIsComplete(true)
+        if (result.success && result.id && result.tracking) {
+          setCreated({ id: result.id, tracking: result.tracking });
+          return;
         }
-      } catch (err) {
-        console.error("Error creating delivery:", err)
-        alert("Failed to create delivery. Please try again.")
+        console.error("Delivery creation returned an incomplete response");
+        setError("The delivery response was incomplete. Check your recent deliveries before trying again.");
+      } catch (error) {
+        console.error("Error creating delivery:", error);
+        setError("Your request could not be created. Please check your recent deliveries before trying again.");
       }
-    })
+    });
   }
 
-  if (isComplete) {
+  if (created) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <div className="text-center">
-          <div className="mb-6 flex justify-center">
-            <div className="rounded-full bg-green-100 p-4">
-              <CheckCircle2 className="h-12 w-12 text-green-600" />
-            </div>
-          </div>
-          <h2 className="mb-2 text-2xl font-bold text-gray-900">Delivery Request Placed!</h2>
-          <p className="mb-2 text-gray-600">Your delivery request has been successfully created.</p>
-          <p className="mb-6 text-sm font-semibold text-emerald-700">Tracking: {trackingNumber}</p>
-
-          <div className="mb-8 rounded-xl bg-emerald-50 p-4">
-            <p className="text-sm font-medium text-gray-900">
-              Your request has been placed successfully!
-            </p>
-            <p className="mt-2 text-sm text-gray-600">
-              Click below to find and assign a courier to your delivery.
-            </p>
-          </div>
-
-          <button
-            onClick={() => {
-              setIsComplete(false)
-              setCurrentStep(1)
-              setFormData({
-                deliveryMethod: "within_town",
-                parcelDescription: "",
-                parcelSize: "",
-                weightKg: "",
-                pickupLocation: "",
-                pickupLandmark: "",
-                pickupLatitude: "",
-                pickupLongitude: "",
-                destinationLocation: "",
-                destinationLandmark: "",
-                destinationLatitude: "",
-                destinationLongitude: "",
-                receiverName: "",
-                receiverPhone: "",
-              })
-            }}
-            className="mb-3 w-full rounded-xl bg-emerald-700 px-6 py-3 font-semibold text-white hover:bg-emerald-800"
-          >
-            Find a Courier
-          </button>
-          <button
-            onClick={() => {
-              setIsComplete(false)
-              setCurrentStep(1)
-            }}
-            className="w-full rounded-xl border border-slate-300 px-6 py-3 font-semibold text-gray-700 hover:bg-slate-50"
-          >
-            Create Another Delivery
-          </button>
-        </div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-8">
+        <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-700" aria-hidden="true" />
+        <h2 className="mt-4 text-2xl font-bold">Your delivery request is ready!</h2>
+        <p className="mt-2 text-slate-600">No carrier has been selected yet.</p>
+        <p className="mt-4 text-sm font-semibold text-emerald-700">Tracking: {created.tracking}</p>
+        <Link
+          href={`/deliveries/${created.id}#carrier`}
+          className="mt-6 flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-700 px-6 py-3 font-semibold text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+        >
+          Find a carrier
+        </Link>
+        <button
+          type="button"
+          onClick={() => {
+            setCreated(null);
+            setFormData(emptyForm);
+            setHighestStep(1);
+            setCurrentStep(1);
+            setError(null);
+          }}
+          className="mt-3 min-h-12 w-full rounded-xl border border-slate-300 px-6 py-3 font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+        >
+          Create another delivery
+        </button>
       </div>
-    )
+    );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Progress Tracker */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
-        <OrderTracking steps={steps} />
-      </div>
+    <form onSubmit={handleSubmit} noValidate className="space-y-3">
+      {steps.map(({ number, title }) => {
+        const isOpen = currentStep === number;
+        const completed = number < highestStep && !validateDeliveryStep(number, formData);
+        const available = number <= highestStep;
+        const Icon = number === 1 ? Package : Truck;
 
-      {/* Form Steps */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Step 1: Parcel Details */}
-          {currentStep === 1 && (
-            <div className="space-y-5">
-              <div>
-                <div className="mb-6 flex items-center gap-3">
-                  <Package className="h-6 w-6 text-emerald-700" />
-                  <h2 className="text-xl font-bold">1. Parcel Details</h2>
-                </div>
-              </div>
+        return (
+          <section key={number} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <h2>
+              <button
+                ref={(element) => { stepButtons.current[number] = element; }}
+                type="button"
+                disabled={!available || isPending}
+                aria-expanded={isOpen}
+                aria-controls={`delivery-step-${number}`}
+                onClick={() => openStep(number)}
+                className="flex min-h-14 w-full items-center gap-3 rounded-2xl px-4 py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {completed ? (
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-700" aria-hidden="true" />
+                ) : (
+                  <Icon className="h-5 w-5 shrink-0 text-emerald-700" aria-hidden="true" />
+                )}
+                <span className="flex-1 font-semibold">
+                  {title}
+                  {completed ? <span className="sr-only">, completed</span> : null}
+                </span>
+                <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+              </button>
+            </h2>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium">Delivery method</label>
-                <select
-                  value={formData.deliveryMethod}
-                  onChange={(e) => setFormData({ ...formData, deliveryMethod: e.target.value })}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                >
-                  <option value="within_town">Within town</option>
-                  <option value="to_stage">To a stage</option>
-                  <option value="intertown">Inter-town</option>
-                </select>
-              </div>
+            <div id={`delivery-step-${number}`} hidden={!isOpen} className="space-y-5 border-t border-slate-100 p-4 sm:p-6">
+              {number === 1 ? (
+                <>
+                  <div>
+                    <label htmlFor="deliveryMethod" className="mb-2 block text-sm font-medium">Delivery method</label>
+                    <select id="deliveryMethod" value={formData.deliveryMethod} onChange={(event) => updateForm({ deliveryMethod: event.target.value })} className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3">
+                      <option value="within_town">Within town</option>
+                      <option value="to_stage">To a stage</option>
+                      <option value="intertown">Inter-town</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="parcelDescription" className="mb-2 block text-sm font-medium">Parcel description <span aria-hidden="true">*</span></label>
+                    <textarea id="parcelDescription" value={formData.parcelDescription} onChange={(event) => updateForm({ parcelDescription: event.target.value })} rows={3} className="w-full rounded-xl border border-slate-300 px-4 py-3" placeholder="What are you sending?" required />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="parcelSize" className="mb-2 block text-sm font-medium">Parcel size (optional)</label>
+                      <select id="parcelSize" value={formData.parcelSize} onChange={(event) => updateForm({ parcelSize: event.target.value })} className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3">
+                        <option value="">Select size</option>
+                        <option value="small">Small</option>
+                        <option value="medium">Medium</option>
+                        <option value="large">Large</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="weightKg" className="mb-2 block text-sm font-medium">Weight in kg (optional)</label>
+                      <input id="weightKg" type="number" min="0" step="0.1" value={formData.weightKg} onChange={(event) => updateForm({ weightKg: event.target.value })} className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    </div>
+                  </div>
+                </>
+              ) : null}
 
-              <div>
-                <label className="mb-2 block text-sm font-medium">Parcel description *</label>
-                <textarea
-                  value={formData.parcelDescription}
-                  onChange={(e) => setFormData({ ...formData, parcelDescription: e.target.value })}
-                  rows={3}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                  placeholder="What are you sending?"
-                  required
+              {number === 2 ? (
+                <DeliveryLocationPickerLoader
+                  name="pickup"
+                  label="Pickup location"
+                  locationName={formData.pickupLocation}
+                  landmark={formData.pickupLandmark}
+                  onLocationChange={(location, latitude, longitude, landmark) => updateForm({
+                    pickupLocation: location, pickupLatitude: latitude, pickupLongitude: longitude, pickupLandmark: landmark,
+                  })}
                 />
-              </div>
+              ) : null}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-sm font-medium">Parcel size</label>
-                  <select
-                    value={formData.parcelSize}
-                    onChange={(e) => setFormData({ ...formData, parcelSize: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                  >
-                    <option value="">Select size</option>
-                    <option value="small">Small</option>
-                    <option value="medium">Medium</option>
-                    <option value="large">Large</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium">Weight (kg)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={formData.weightKg}
-                    onChange={(e) => setFormData({ ...formData, weightKg: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
+              {number === 3 ? (
+                <>
+                  <DeliveryLocationPickerLoader
+                    name="destination"
+                    label="Drop-off location"
+                    locationName={formData.destinationLocation}
+                    landmark={formData.destinationLandmark}
+                    onLocationChange={(location, latitude, longitude, landmark) => updateForm({
+                      destinationLocation: location, destinationLatitude: latitude, destinationLongitude: longitude, destinationLandmark: landmark,
+                    })}
                   />
-                </div>
-              </div>
+                  <div className="space-y-4 border-t border-slate-100 pt-4">
+                    <h3 className="font-semibold">Receiver details</h3>
+                    <div>
+                      <label htmlFor="receiverName" className="mb-2 block text-sm font-medium">Receiver name (optional)</label>
+                      <input id="receiverName" type="text" value={formData.receiverName} onChange={(event) => updateForm({ receiverName: event.target.value })} className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    </div>
+                    <div>
+                      <label htmlFor="receiverPhone" className="mb-2 block text-sm font-medium">Receiver phone (optional)</label>
+                      <input id="receiverPhone" type="tel" inputMode="tel" placeholder="0712 345 678" value={formData.receiverPhone} onChange={(event) => updateForm({ receiverPhone: event.target.value })} className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    </div>
+                  </div>
+                </>
+              ) : null}
+
+              {isOpen && error ? <p role="alert" className="text-sm font-medium text-red-700">{error}</p> : null}
+              {number < 3 ? (
+                <button type="button" onClick={() => continueTo(number === 1 ? 2 : 3)} disabled={isPending} className="min-h-12 w-full rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:opacity-50">
+                  Continue
+                </button>
+              ) : (
+                <button type="submit" disabled={isPending} className="min-h-12 w-full rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:opacity-50">
+                  {isPending ? "Creating..." : "Create delivery request"}
+                </button>
+              )}
             </div>
-          )}
-
-          {/* Step 2: Pickup Location */}
-          {currentStep === 2 && (
-            <div className="space-y-5">
-              <div>
-                <div className="mb-6 flex items-center gap-3">
-                  <MapPin className="h-6 w-6 text-emerald-700" />
-                  <h2 className="text-xl font-bold">2. Pickup Location</h2>
-                </div>
-              </div>
-
-              <DeliveryLocationPickerLoader
-                name="pickup"
-                label="Pickup location"
-                locationName={formData.pickupLocation}
-                landmark={formData.pickupLandmark}
-                onLocationChange={(location, latitude, longitude, landmark) =>
-                  setFormData({
-                    ...formData,
-                    pickupLocation: location,
-                    pickupLatitude: latitude,
-                    pickupLongitude: longitude,
-                    pickupLandmark: landmark,
-                  })
-                }
-              />
-            </div>
-          )}
-
-          {/* Step 3: Drop-off & Receiver */}
-          {currentStep === 3 && (
-            <div className="space-y-5">
-              <div>
-                <div className="mb-6 flex items-center gap-3">
-                  <User className="h-6 w-6 text-emerald-700" />
-                  <h2 className="text-xl font-bold">3. Drop-off Details</h2>
-                </div>
-              </div>
-
-              <DeliveryLocationPickerLoader
-                name="destination"
-                label="Delivery destination"
-                locationName={formData.destinationLocation}
-                landmark={formData.destinationLandmark}
-                onLocationChange={(location, latitude, longitude, landmark) =>
-                  setFormData({
-                    ...formData,
-                    destinationLocation: location,
-                    destinationLatitude: latitude,
-                    destinationLongitude: longitude,
-                    destinationLandmark: landmark,
-                  })
-                }
-              />
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-sm font-medium">Receiver name</label>
-                  <input
-                    type="text"
-                    value={formData.receiverName}
-                    onChange={(e) => setFormData({ ...formData, receiverName: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium">Receiver phone</label>
-                  <input
-                    type="tel"
-                    inputMode="tel"
-                    placeholder="0712 345 678"
-                    value={formData.receiverPhone}
-                    onChange={(e) => setFormData({ ...formData, receiverPhone: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Navigation Buttons */}
-          <div className="flex gap-3 pt-6">
-            {currentStep > 1 && (
-              <button
-                type="button"
-                onClick={handlePrev}
-                className="flex-1 rounded-xl border border-slate-300 px-4 py-3 font-semibold text-gray-700 hover:bg-slate-50"
-              >
-                Back
-              </button>
-            )}
-            {currentStep < 3 ? (
-              <button
-                type="button"
-                onClick={handleNext}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white hover:bg-emerald-800"
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={isPending}
-                className="flex-1 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
-              >
-                {isPending ? "Creating..." : "Create Delivery"}
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
-    </div>
-  )
+          </section>
+        );
+      })}
+    </form>
+  );
 }

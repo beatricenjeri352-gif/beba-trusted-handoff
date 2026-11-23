@@ -1,0 +1,14 @@
+@media (prefers-reduced-motion: no-preference) {
+  .truck {
+    animation: truck-arrive 1.4s ease-in-out 2;
+  }
+}
+
+@keyframes truck-arrive {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(8px);
+  }
+}

@@ -3,14 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { redirect as nextRedirect } from "next/navigation"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
-
-function normalizePhone(value: string) {
-  const digits = value.replace(/[^0-9]/g, "")
-  if (digits.startsWith("254") && digits.length === 12) return digits
-  if (digits.startsWith("0") && digits.length === 10) return `254${digits.slice(1)}`
-  if (digits.startsWith("7") && digits.length === 9) return `254${digits}`
-  return null
-}
+import { normalizePhone } from "@/lib/delivery/validation"
 
 export async function createDeliveryAction(formData: {
   deliveryMethod: string
@@ -106,5 +99,5 @@ export async function createDeliveryAction(formData: {
   }
 
   revalidatePath("/deliveries")
-  return { success: true, tracking: delivery.tracking_number }
+  return { success: true, tracking: delivery.tracking_number, id: delivery.id }
 }

@@ -24,12 +24,13 @@ export default function DeliveryLocationPicker({
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState(locationName);
   const [localLandmark, setLocalLandmark] = useState(landmark);
+  const [landmarkOpen, setLandmarkOpen] = useState(Boolean(landmark));
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
-  const skipSearch = useRef(false);
+  const selectedQuery = useRef<string | null>(null);
 
   function applyPlace(place: PlaceSuggestion, message: string) {
-    skipSearch.current = true;
+    selectedQuery.current = place.label;
     setQuery(place.label);
     setLatitude(place.latitude.toFixed(6));
     setLongitude(place.longitude.toFixed(6));
@@ -40,10 +41,11 @@ export default function DeliveryLocationPicker({
   }
 
   useEffect(() => {
-    if (skipSearch.current) {
-      skipSearch.current = false;
+    if (selectedQuery.current === query) {
+      selectedQuery.current = null;
       return;
     }
+    selectedQuery.current = null;
 
     const text = query.trim();
     if (text.length < 3) {
@@ -83,6 +85,7 @@ export default function DeliveryLocationPicker({
     setLatitude("");
     setLongitude("");
     setSuggestions([]);
+    onLocationChange?.(value, "", "", localLandmark);
   }
 
   function useCurrentLocation() {
@@ -160,8 +163,9 @@ export default function DeliveryLocationPicker({
         Use my current location
       </button>
 
-      <div className="mt-4">
-        <label className="mb-2 block text-sm font-medium" htmlFor={`${name}Landmark`}>Nearest commonly known building or landmark <span className="text-xs font-normal text-slate-500">(optional)</span></label>
+      <details className="mt-3" open={landmarkOpen} onToggle={(event) => setLandmarkOpen(event.currentTarget.open)}>
+        <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold text-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">Add landmark (optional)</summary>
+        <label className="mb-2 block text-sm font-medium" htmlFor={`${name}Landmark`}>Nearby landmark</label>
         <input
           id={`${name}Landmark`}
           name={`${name}Landmark`}
@@ -174,7 +178,7 @@ export default function DeliveryLocationPicker({
           placeholder="Example: Naivas, City Hall, main stage"
           className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3"
         />
-      </div>
+      </details>
 
       <input type="hidden" name={`${name}Latitude`} value={latitude} />
       <input type="hidden" name={`${name}Longitude`} value={longitude} />

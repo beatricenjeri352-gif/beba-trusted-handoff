@@ -584,7 +584,7 @@ export default async function DeliveryDetailPage({
           )}
         </div>
 
-        <div className="mt-6">
+        <div id="carrier" className="mt-6">
           <h2 className="font-bold">Carrier</h2>
           {assignment ? (
             <p className="mt-3 rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
