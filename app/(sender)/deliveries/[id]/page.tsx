@@ -4,7 +4,10 @@ import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getActualRouteDistanceMetres } from "@/lib/pricing/google-maps";
-import { normalizeTransportMethod } from "@/lib/pricing/delivery-pricing";
+import { calculateWalkingDeliveryQuote } from "@/lib/pricing/walking-bands";
+import { getCarrierDistancesToPickup } from "@/lib/carrier/distance";
+import { describeCarrierDistance, describeRatings, routeTransportMethodForCarrier, validateReview } from "@/lib/carrier/location";
+import { PageShell } from "@/components/page-shell";
 
 interface AssignmentRow {
   id: string;
@@ -38,6 +41,66 @@ interface ChargeRow {
   sender_agreed_at: string | null;
   carrier_agreed_at: string | null;
   status: string;
+}
+
+type WalkingPricePreview =
+  | { status: "missing_points" }
+  | { status: "unavailable"; message: string }
+  | { status: "too_far"; distanceMetres: number }
+  | {
+      status: "priced";
+      distanceMetres: number;
+      feeCents: number;
+      commissionCents: number;
+      carrierEarningsCents: number;
+    };
+
+interface RoutePoint {
+  latitude: number | string | null;
+  longitude: number | string | null;
+}
+
+// Read-only preview: uses the Google walking route and the band table, and stores nothing.
+async function getWalkingPricePreview(
+  pickup: RoutePoint | undefined,
+  destination: RoutePoint | undefined,
+): Promise<WalkingPricePreview> {
+  if (pickup?.latitude == null || pickup?.longitude == null || destination?.latitude == null || destination?.longitude == null) {
+    return { status: "missing_points" };
+  }
+
+  let route;
+  try {
+    route = await getActualRouteDistanceMetres(
+      "walking",
+      { latitude: Number(pickup.latitude), longitude: Number(pickup.longitude) },
+      { latitude: Number(destination.latitude), longitude: Number(destination.longitude) },
+    );
+  } catch (error) {
+    return {
+      status: "unavailable",
+      message: error instanceof Error && error.message === "ROUTING_PROVIDER_NOT_CONFIGURED"
+        ? "Route distance is unavailable until the Google Maps key is configured on the server."
+        : "Estimate unavailable. A walking route could not be loaded, so no price is shown.",
+    };
+  }
+
+  const result = calculateWalkingDeliveryQuote(route.metres);
+  if (result.status === "too_far_to_walk") {
+    return { status: "too_far", distanceMetres: route.metres };
+  }
+
+  return {
+    status: "priced",
+    distanceMetres: route.metres,
+    feeCents: result.deliveryFeeCents,
+    commissionCents: result.commissionCents,
+    carrierEarningsCents: result.carrierEarningsCents,
+  };
+}
+
+function formatKes(cents: number): string {
+  return `KES ${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
 export default async function DeliveryDetailPage({
@@ -100,11 +163,66 @@ export default async function DeliveryDetailPage({
 
   const negotiatedCharges = (negotiatedChargesRaw ?? []) as ChargeRow[];
 
+  const pricePreview = await getWalkingPricePreview(
+    stops?.find((stop) => stop.stop_type === "pickup"),
+    stops?.find((stop) => stop.stop_type === "destination"),
+  );
+
   const { data: carriers } = await supabase
     .from("carrier_profiles")
     .select("user_id, carrier_type, operating_towns, delivery_methods, vehicle_type, profile_description")
     .eq("approval_status", "approved")
     .eq("active_status", true);
+
+  const carrierIds = carriers?.map((carrier) => carrier.user_id) ?? [];
+  const pickupStop = stops?.find((stop) => stop.stop_type === "pickup");
+  const carrierTravelModes = new Map(
+    (carriers ?? []).map((carrier) => [carrier.user_id, routeTransportMethodForCarrier(carrier)]),
+  );
+  const carrierDistances = delivery.current_status === "draft" && carrierIds.length && pickupStop?.latitude && pickupStop?.longitude
+    ? await getCarrierDistancesToPickup(carrierIds, {
+        latitude: Number(pickupStop.latitude),
+        longitude: Number(pickupStop.longitude),
+      }, carrierTravelModes)
+    : new Map<string, number | null>();
+
+  const { data: reviewRows } = carrierIds.length
+    ? await supabase.from("delivery_review_public").select("carrier_user_id, rating").in("carrier_user_id", carrierIds)
+    : { data: null };
+
+  const ratingsByCarrier = new Map<string, number[]>();
+  for (const row of reviewRows ?? []) {
+    ratingsByCarrier.set(row.carrier_user_id, [...(ratingsByCarrier.get(row.carrier_user_id) ?? []), Number(row.rating)]);
+  }
+
+  const rankedCarriers = [...(carriers ?? [])].sort((a, b) => {
+    const distanceA = carrierDistances.get(a.user_id);
+    const distanceB = carrierDistances.get(b.user_id);
+    if (distanceA == null || distanceB == null) return Number(distanceA == null) - Number(distanceB == null);
+    return distanceA - distanceB;
+  });
+
+  const { data: existingReview } = await supabase
+    .from("delivery_review_public")
+    .select("rating, comment")
+    .eq("delivery_request_id", delivery.id)
+    .maybeSingle();
+
+  const { data: latestAssignment } = await supabase
+    .from("delivery_assignments")
+    .select("carrier_user_id")
+    .eq("delivery_request_id", delivery.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const completedCarrierId = latestAssignment?.carrier_user_id ?? null;
+
+  const { data: openBookings } = await supabase
+    .from("carrier_bookings")
+    .select("id, carrier_user_id, created_at")
+    .eq("sender_user_id", user.id)
+    .eq("booking_status", "pending_carrier_confirmation")
+    .order("created_at", { ascending: false });
 
   async function calculateQuote() {
     "use server";
@@ -129,17 +247,6 @@ export default async function DeliveryDetailPage({
       redirect(`/deliveries/${id}?error=carrier-required-for-quote`);
     }
 
-    const { data: carrierProfile } = await supabase
-      .from("carrier_profiles")
-      .select("vehicle_type")
-      .eq("user_id", assignedCarrier.carrier_user_id)
-      .maybeSingle();
-
-    const transportMethod = normalizeTransportMethod(carrierProfile?.vehicle_type);
-    if (!transportMethod) {
-      redirect(`/deliveries/${id}?error=unsupported-transport-method`);
-    }
-
     const { data: routeStops } = await supabase
       .from("delivery_stops")
       .select("stop_type, latitude, longitude")
@@ -155,7 +262,7 @@ export default async function DeliveryDetailPage({
     let route;
     try {
       route = await getActualRouteDistanceMetres(
-        transportMethod,
+        "walking",
         { latitude: Number(pickup.latitude), longitude: Number(pickup.longitude) },
         { latitude: Number(destination.latitude), longitude: Number(destination.longitude) },
       );
@@ -166,6 +273,10 @@ export default async function DeliveryDetailPage({
       redirect(`/deliveries/${id}?error=${code}`);
     }
 
+    if (calculateWalkingDeliveryQuote(route.metres).status === "too_far_to_walk") {
+      redirect(`/deliveries/${id}?error=too-far-to-walk`);
+    }
+
     let admin;
     try {
       admin = createSupabaseAdminClient();
@@ -174,12 +285,16 @@ export default async function DeliveryDetailPage({
       redirect(`/deliveries/${id}?error=${encodeURIComponent(code)}`);
     }
 
-    const { data: quoteId, error } = await admin.rpc("create_delivery_quote", {
+    const { data: quoteId, error } = await admin.rpc("create_walking_delivery_quote", {
       delivery_id: id,
-      actual_route_distance_metres: route.metres,
+      walking_distance_metres: route.metres,
       route_provider: route.provider,
       route_reference: route.providerReference,
     });
+
+    if (error?.message?.includes("TOO_FAR_TO_WALK")) {
+      redirect(`/deliveries/${id}?error=too-far-to-walk`);
+    }
 
     if (error || !quoteId) {
       redirect(`/deliveries/${id}?error=quote-unavailable`);
@@ -252,13 +367,13 @@ export default async function DeliveryDetailPage({
     const carrierUserId = String(formData.get("carrierUserId") ?? "");
     if (!carrierUserId) redirect(`/deliveries/${id}?error=carrier-required`);
 
-    const { error } = await supabase.rpc("select_delivery_carrier", {
-      p_delivery_id: id,
+    const { error } = await supabase.rpc("create_carrier_booking", {
       p_carrier_user_id: carrierUserId,
+      p_delivery_ids: [id],
     });
 
     if (error) {
-      console.error("Carrier assignment selection failed", error);
+      console.error("Carrier booking creation failed", error);
       redirect(`/deliveries/${id}?error=assignment-failed`);
     }
 
@@ -266,13 +381,70 @@ export default async function DeliveryDetailPage({
     redirect(`/deliveries/${id}?saved=carrier-selected`);
   }
 
-  return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <Link href="/deliveries" className="text-sm font-semibold text-emerald-700">← Back to deliveries</Link>
+  async function addToBooking(formData: FormData) {
+    "use server";
 
-      <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+
+    if (!currentUser) redirect("/login");
+
+    const bookingId = String(formData.get("bookingId") ?? "");
+    if (!bookingId) redirect(`/deliveries/${id}?error=booking-required`);
+
+    const { error } = await supabase.rpc("add_delivery_to_carrier_booking", {
+      p_booking_id: bookingId,
+      p_delivery_id: id,
+    });
+
+    if (error) {
+      console.error("Adding delivery to carrier booking failed", error);
+      redirect(`/deliveries/${id}?error=booking-add-failed`);
+    }
+
+    revalidatePath(`/deliveries/${id}`);
+    redirect(`/deliveries/${id}?saved=added-to-booking`);
+  }
+
+  async function submitDeliveryReview(formData: FormData) {
+    "use server";
+
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+
+    if (!currentUser) redirect("/login");
+
+    const review = validateReview({ rating: formData.get("rating"), comment: formData.get("comment") });
+    if (!review.ok) redirect(`/deliveries/${id}?error=${review.error}`);
+
+    const { error } = await supabase.from("delivery_reviews").insert({
+      delivery_request_id: id,
+      sender_user_id: currentUser.id,
+      carrier_user_id: String(formData.get("carrierUserId") ?? ""),
+      rating: review.rating,
+      comment: review.comment,
+    });
+
+    if (error) {
+      console.error("Saving delivery review failed", error);
+      redirect(`/deliveries/${id}?error=review-not-saved`);
+    }
+
+    revalidatePath(`/deliveries/${id}`);
+    redirect(`/deliveries/${id}?saved=review-created`);
+  }
+
+  return (
+    <PageShell>
+      <Link href="/deliveries" className="inline-flex min-h-11 items-center text-sm font-semibold text-emerald-700">← Back to deliveries</Link>
+
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <p className="text-sm font-semibold text-emerald-700">Tracking</p>
-        <h1 className="mt-2 text-3xl font-bold">{delivery.tracking_number}</h1>
+        <h1 className="mt-2 text-2xl font-bold break-words sm:text-3xl">{delivery.tracking_number}</h1>
         <p className="mt-3 inline-block rounded-full bg-slate-100 px-3 py-1 text-sm font-medium">
           {delivery.current_status.replaceAll("_", " ")}
         </p>
@@ -287,8 +459,8 @@ export default async function DeliveryDetailPage({
           <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800" role="alert">
             {query.error === "carrier-required-for-quote"
               ? "Select and confirm a carrier before calculating the price."
-              : query.error === "unsupported-transport-method"
-                ? "The carrier transport method is not supported by the approved pricing rules."
+              : query.error === "too-far-to-walk"
+                ? "Too far to walk. Over 3 km, choose a car, tuktuk, or boda instead."
                 : query.error === "ROUTING_PROVIDER_NOT_CONFIGURED"
                   ? "Route distance is unavailable until the Google Maps key is configured on the server."
                   : query.error === "ROUTE_DISTANCE_NOT_AVAILABLE"
@@ -297,7 +469,11 @@ export default async function DeliveryDetailPage({
                       ? "The server pricing service is not configured."
                       : query.error === "quote-unavailable"
                         ? "A price estimate could not be created. Confirm the carrier, route, and pricing are still available."
-                        : "The quote could not be created."}
+                        : query.error === "review-not-saved"
+                          ? "Your review could not be saved. Only the sender of a completed delivery can review its carrier, once."
+                          : query.error === "RATING_INVALID" || query.error === "COMMENT_TOO_LONG"
+                            ? "Choose a rating from 1 to 5, and keep the comment under 500 characters."
+                            : "The quote could not be created."}
           </p>
         ) : null}
 
@@ -326,6 +502,30 @@ export default async function DeliveryDetailPage({
         </div>
 
         <div className="mt-6">
+          <h2 className="font-bold">Walking price preview</h2>
+          {pricePreview.status === "priced" ? (
+            <div className="mt-3 rounded-xl border border-slate-200 p-4">
+              <p className="text-2xl font-bold">{formatKes(pricePreview.feeCents)}</p>
+              <dl className="mt-3 grid grid-cols-2 gap-2 text-sm text-slate-600">
+                <div><dt>Walking distance</dt><dd className="font-semibold text-slate-900">{(pricePreview.distanceMetres / 1000).toFixed(2)} km</dd></div>
+                <div><dt>Delivery fee</dt><dd className="font-semibold text-slate-900">{formatKes(pricePreview.feeCents)}</dd></div>
+                <div><dt>Beba commission (10%)</dt><dd className="font-semibold text-slate-900">{formatKes(pricePreview.commissionCents)}</dd></div>
+                <div><dt>Carrier earns</dt><dd className="font-semibold text-slate-900">{formatKes(pricePreview.carrierEarningsCents)}</dd></div>
+              </dl>
+              <p className="mt-3 text-xs text-slate-500">Shown before choosing a carrier. Agreement is between you and the carrier.</p>
+            </div>
+          ) : pricePreview.status === "too_far" ? (
+            <p className="mt-3 rounded-xl bg-amber-50 p-4 text-sm font-medium text-amber-800">
+              Too far to walk ({(pricePreview.distanceMetres / 1000).toFixed(2)} km). Choose a car, tuktuk, or boda instead.
+            </p>
+          ) : pricePreview.status === "unavailable" ? (
+            <p className="mt-3 rounded-xl bg-amber-50 p-4 text-sm font-medium text-amber-800">{pricePreview.message}</p>
+          ) : (
+            <p className="mt-3 text-sm text-slate-600">Set the pickup and drop-off points to see the walking price.</p>
+          )}
+        </div>
+
+        <div className="mt-6">
           <h2 className="font-bold">Estimated price</h2>
           {latestQuote ? (
             <div className="mt-3 rounded-xl border border-slate-200 p-4">
@@ -343,7 +543,7 @@ export default async function DeliveryDetailPage({
               {latestQuote.valid_until ? <p className="text-xs text-slate-500">Valid until {new Date(latestQuote.valid_until).toLocaleString()}</p> : null}
               {latestQuote.quote_status === "estimated" || latestQuote.quote_status === "revised" ? (
                 <form action={confirmQuote} className="mt-3">
-                  <button className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Confirm this quote</button>
+                  <button className="min-h-11 w-full rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700 sm:w-auto">Confirm this quote</button>
                 </form>
               ) : latestQuote.quote_status === "confirmed" ? (
                 <p className="mt-3 text-sm font-semibold text-emerald-700">Quote confirmed: KES {(Number(latestQuote.final_agreed_price_cents) / 100).toFixed(2)}</p>
@@ -355,7 +555,7 @@ export default async function DeliveryDetailPage({
             <p className="mt-3 text-sm text-slate-600">No price estimate is available yet.</p>
           )}
           <form action={calculateQuote} className="mt-3">
-            <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Calculate estimate</button>
+            <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white sm:w-auto">Calculate estimate</button>
           </form>
         </div>
 
@@ -371,7 +571,7 @@ export default async function DeliveryDetailPage({
                   {!charge.sender_agreed_at && charge.status !== "approved" ? (
                     <form action={agreeToCharge} className="mt-3">
                       <input type="hidden" name="chargeId" value={charge.id} />
-                      <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Agree to this charge</button>
+                      <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white sm:w-auto">Agree to this charge</button>
                     </form>
                   ) : (
                     <p className="mt-2 text-xs text-emerald-700">Sender agreement recorded</p>
@@ -392,14 +592,36 @@ export default async function DeliveryDetailPage({
             </p>
           ) : delivery.current_status === "draft" ? (
             <div className="mt-3 space-y-3">
-              {carriers?.length ? carriers.map((carrier) => (
+              {openBookings?.length ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="font-bold">Add to an open carrier booking</p>
+                  <p className="mt-1 text-sm text-slate-600">Send this delivery with a carrier you already booked for another delivery.</p>
+                  <div className="mt-3 space-y-2">
+                    {openBookings.map((booking) => {
+                      const bookedCarrier = carriers?.find((carrier) => carrier.user_id === booking.carrier_user_id);
+                      return (
+                        <form key={booking.id} action={addToBooking} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <input type="hidden" name="bookingId" value={booking.id} />
+                          <span className="text-sm text-slate-700">{bookedCarrier?.profile_description || "Booked carrier"}</span>
+                          <button className="min-h-11 w-full rounded-lg border border-emerald-700 px-3 py-2 text-sm font-semibold text-emerald-800 sm:w-auto">Add to booking</button>
+                        </form>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              {rankedCarriers.length ? rankedCarriers.map((carrier) => (
                 <form key={carrier.user_id} action={selectCarrier} className="rounded-xl border border-slate-200 p-4">
                   <input type="hidden" name="carrierUserId" value={carrier.user_id} />
                   <p className="font-bold">{carrier.profile_description || "Approved carrier"}</p>
                   <p className="mt-1 text-sm text-slate-600">{carrier.carrier_type?.replaceAll("_", " ") || "Carrier"}</p>
+                  {delivery.current_status === "draft" ? (
+                    <p className="mt-1 text-sm font-semibold text-emerald-800">{describeCarrierDistance(carrierDistances, carrier.user_id)}</p>
+                  ) : null}
+                  <p className="mt-1 text-sm text-slate-600">Rating: {describeRatings(ratingsByCarrier.get(carrier.user_id))}</p>
                   {carrier.operating_towns?.length ? <p className="mt-1 text-sm text-slate-600">Areas: {carrier.operating_towns.join(", ")}</p> : null}
                   {carrier.delivery_methods?.length ? <p className="mt-1 text-sm text-slate-600">Methods: {carrier.delivery_methods.join(", ").replaceAll("_", " ")}</p> : null}
-                  <button className="mt-3 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Select carrier</button>
+                  <button className="mt-3 min-h-11 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Select carrier</button>
                 </form>
               )) : (
                 <p className="text-sm text-slate-600">No approved carriers are currently available.</p>
@@ -409,6 +631,34 @@ export default async function DeliveryDetailPage({
             <p className="mt-3 text-sm text-slate-600">Carrier selection is no longer available for this delivery.</p>
           )}
         </div>
+
+        {delivery.current_status === "completed" && completedCarrierId ? (
+          <div className="mt-6 rounded-xl border border-slate-200 p-4">
+            <h2 className="font-bold">Rate your carrier</h2>
+            {existingReview ? (
+              <p className="mt-2 text-sm text-slate-600">
+                You rated this delivery {existingReview.rating}/5.{existingReview.comment ? ` "${existingReview.comment}"` : ""}
+              </p>
+            ) : (
+              <form action={submitDeliveryReview} className="mt-3 space-y-3">
+                <input type="hidden" name="carrierUserId" value={completedCarrierId} />
+                <label className="block text-sm font-semibold text-slate-700">
+                  Stars
+                  <select name="rating" required defaultValue="5" className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2">
+                    {[5, 4, 3, 2, 1].map((value) => (
+                      <option key={value} value={value}>{value} star{value === 1 ? "" : "s"}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-slate-700">
+                  Comment (optional)
+                  <textarea name="comment" maxLength={500} rows={3} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2" />
+                </label>
+                <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white sm:w-auto">Submit review</button>
+              </form>
+            )}
+          </div>
+        ) : null}
 
         <div className="mt-6">
           <h2 className="font-bold">Journey</h2>
@@ -425,6 +675,6 @@ export default async function DeliveryDetailPage({
           </div>
         </div>
       </div>
-    </main>
+    </PageShell>
   );
 }

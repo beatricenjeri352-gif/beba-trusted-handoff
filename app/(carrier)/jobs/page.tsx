@@ -1,14 +1,22 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 
+import { PageShell } from "@/components/page-shell";
 import { ProfileSwitcher } from "@/components/profile-switcher";
+import { getRoadDistancesMetres } from "@/lib/carrier/distance";
+import { describePickupDistance, describeRatings, isLocationFresh, routeTransportMethodForCarrier } from "@/lib/carrier/location";
 import { isCarrierProfileLocked } from "@/lib/profiles/carrier-lock";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+import { CarrierLocationToggle } from "./carrier-location-toggle";
 
 interface AssignmentRow {
   id: string;
   delivery_request_id: string;
   assignment_status: string;
+  carrier_booking_id?: string | null;
   delivery_requests?: { tracking_number?: string; parcel_description?: string; current_status?: string } | null;
 }
 
@@ -27,6 +35,25 @@ interface ChargeRow {
   sender_agreed_at: string | null;
   carrier_agreed_at: string | null;
   status: string;
+}
+
+interface DeliveryStopRow {
+  delivery_request_id: string;
+  stop_type: string;
+  location_name: string;
+  latitude: number | string | null;
+  longitude: number | string | null;
+}
+
+interface ReviewRow {
+  rating: number;
+  comment: string | null;
+  created_at: string;
+}
+
+async function requestTimeMs(): Promise<number> {
+  await connection();
+  return Date.now();
 }
 
 export default async function CarrierPage({
@@ -110,11 +137,48 @@ export default async function CarrierPage({
 
   const { data: assignmentsRaw } = await supabase
     .from("delivery_assignments")
-    .select("id, delivery_request_id, assignment_status, delivery_requests(tracking_number, parcel_description, current_status)")
+    .select("id, delivery_request_id, assignment_status, carrier_booking_id, delivery_requests(tracking_number, parcel_description, current_status)")
     .eq("carrier_user_id", user.id)
     .order("selected_at", { ascending: false });
 
   const assignments = (assignmentsRaw ?? []) as unknown as AssignmentRow[];
+
+  const { data: pendingBookingsRaw } = await supabase
+    .from("carrier_bookings")
+    .select("id, created_at")
+    .eq("carrier_user_id", user.id)
+    .eq("booking_status", "pending_carrier_confirmation")
+    .order("created_at", { ascending: false });
+
+  const pendingBookings = (pendingBookingsRaw ?? []) as { id: string; created_at: string }[];
+
+  async function respondToBooking(formData: FormData) {
+    "use server";
+
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+
+    if (!currentUser) redirect("/login");
+
+    const bookingId = String(formData.get("bookingId") ?? "");
+    const response = String(formData.get("response") ?? "");
+
+    if (!bookingId || !["accepted", "declined"].includes(response)) {
+      redirect("/jobs?error=invalid-response");
+    }
+
+    const { error } = await supabase.rpc("respond_to_carrier_booking", {
+      p_booking_id: bookingId,
+      p_response: response,
+    });
+
+    if (error) redirect("/jobs?error=booking-response-failed");
+
+    revalidatePath("/jobs");
+    redirect("/jobs?saved=booking-response");
+  }
 
   async function respondToAssignment(formData: FormData) {
     "use server";
@@ -169,6 +233,58 @@ export default async function CarrierPage({
     : { data: [] };
 
   const chargeRows = (chargeRowsRaw ?? []) as unknown as ChargeRow[];
+
+  const { data: ownLocation } = await supabase
+    .from("carrier_locations")
+    .select("latitude, longitude, updated_at")
+    .eq("carrier_user_id", user.id)
+    .maybeSingle();
+  const nowMs = await requestTimeMs();
+  const isOnline = Boolean(ownLocation && isLocationFresh(ownLocation.updated_at, nowMs));
+
+  const deliveryStops: DeliveryStopRow[] = [];
+  if (deliveryIds.length) {
+    try {
+      const admin = createSupabaseAdminClient();
+      const { data } = await admin
+        .from("delivery_stops")
+        .select("delivery_request_id, stop_type, location_name, latitude, longitude")
+        .in("delivery_request_id", deliveryIds);
+      deliveryStops.push(...((data ?? []) as unknown as DeliveryStopRow[]));
+    } catch (error) {
+      console.error("Loading delivery stops for carrier failed", error);
+    }
+  }
+
+  const pickupByDelivery = new Map<string, DeliveryStopRow>();
+  const destinationByDelivery = new Map<string, DeliveryStopRow>();
+  for (const stop of deliveryStops) {
+    if (stop.stop_type === "pickup") pickupByDelivery.set(stop.delivery_request_id, stop);
+    if (stop.stop_type === "destination") destinationByDelivery.set(stop.delivery_request_id, stop);
+  }
+
+  const pickupDistances = isOnline && ownLocation
+    ? await getRoadDistancesMetres(
+        deliveryIds.flatMap((deliveryId) => {
+          const pickup = pickupByDelivery.get(deliveryId);
+          if (pickup?.latitude == null || pickup.longitude == null) return [];
+          return [{
+            key: deliveryId,
+            from: { latitude: Number(ownLocation.latitude), longitude: Number(ownLocation.longitude) },
+            to: { latitude: Number(pickup.latitude), longitude: Number(pickup.longitude) },
+            transportMethod: routeTransportMethodForCarrier(profile ?? {}),
+          }];
+        }),
+      )
+    : new Map<string, number | null>();
+
+  const { data: reviewRowsRaw } = await supabase
+    .from("delivery_reviews")
+    .select("rating, comment, created_at")
+    .eq("carrier_user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  const reviewRows = (reviewRowsRaw ?? []) as unknown as ReviewRow[];
 
   async function proposeAdditionalCharge(formData: FormData) {
     "use server";
@@ -229,10 +345,10 @@ export default async function CarrierPage({
   const locked = await isCarrierProfileLocked(user.id);
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
+    <PageShell>
       <ProfileSwitcher current="carrier" />
       <p className="mt-6 text-sm font-semibold text-emerald-700">Carrier workspace</p>
-      <h1 className="mt-2 text-3xl font-bold">Carrier application</h1>
+      <h1 className="mt-2 text-2xl font-bold sm:text-3xl">Carrier application</h1>
 
       <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <p className="text-sm text-slate-600">Application status</p>
@@ -257,6 +373,44 @@ export default async function CarrierPage({
         </p>
       ) : null}
 
+      {profile?.approval_status === "approved" && profile.active_status ? (
+        <section className="mt-6">
+          <h2 className="text-xl font-bold">Availability</h2>
+          <div className="mt-3">
+            <CarrierLocationToggle initialOnline={isOnline} />
+          </div>
+        </section>
+      ) : null}
+
+      <section className="mt-6">
+        <h2 className="text-xl font-bold">Booking requests</h2>
+        <div className="mt-3 space-y-3">
+          {pendingBookings.length ? pendingBookings.map((booking) => {
+            const count = assignments.filter((assignment) => assignment.carrier_booking_id === booking.id).length;
+            return (
+              <article key={booking.id} className="rounded-2xl border border-slate-200 p-5">
+                <p className="font-bold">{count} {count === 1 ? "delivery" : "deliveries"} from one sender</p>
+                <p className="mt-1 text-sm text-slate-600">One answer applies to every delivery in this booking.</p>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                  <form action={respondToBooking} className="w-full sm:w-auto">
+                    <input type="hidden" name="bookingId" value={booking.id} />
+                    <input type="hidden" name="response" value="accepted" />
+                    <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Accept all</button>
+                  </form>
+                  <form action={respondToBooking} className="w-full sm:w-auto">
+                    <input type="hidden" name="bookingId" value={booking.id} />
+                    <input type="hidden" name="response" value="declined" />
+                    <button className="min-h-11 w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Decline all</button>
+                  </form>
+                </div>
+              </article>
+            );
+          }) : (
+            <p className="rounded-xl border border-slate-200 p-5 text-sm text-slate-600">No booking requests waiting.</p>
+          )}
+        </div>
+      </section>
+
       <section className="mt-6">
         <h2 className="text-xl font-bold">Delivery assignments</h2>
         <div className="mt-3 space-y-3">
@@ -266,17 +420,31 @@ export default async function CarrierPage({
               <p className="mt-1 text-sm text-slate-600">{assignment.delivery_requests?.parcel_description}</p>
               <p className="mt-2 text-sm font-semibold capitalize">{assignment.assignment_status.replaceAll("_", " ")}</p>
 
-              {assignment.assignment_status === "pending_carrier_confirmation" ? (
-                <div className="mt-4 flex gap-3">
-                  <form action={respondToAssignment}>
+              {pickupByDelivery.get(assignment.delivery_request_id) ? (
+                <div className="mt-3 space-y-1 text-sm text-slate-600">
+                  <p>Pickup: <strong className="text-slate-900">{pickupByDelivery.get(assignment.delivery_request_id)?.location_name}</strong></p>
+                  <p>Drop-off: <strong className="text-slate-900">{destinationByDelivery.get(assignment.delivery_request_id)?.location_name ?? "Not set"}</strong></p>
+                  <p className="font-semibold text-emerald-800">
+                    {describePickupDistance({
+                      online: isOnline,
+                      pickupPinned: Boolean(pickupByDelivery.get(assignment.delivery_request_id)?.latitude),
+                      metres: pickupDistances.get(assignment.delivery_request_id),
+                    })}
+                  </p>
+                </div>
+              ) : null}
+
+              {assignment.assignment_status === "pending_carrier_confirmation" && !assignment.carrier_booking_id ? (
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                  <form action={respondToAssignment} className="w-full sm:w-auto">
                     <input type="hidden" name="assignmentId" value={assignment.id} />
                     <input type="hidden" name="response" value="accepted" />
-                    <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Accept</button>
+                    <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Accept</button>
                   </form>
-                  <form action={respondToAssignment}>
+                  <form action={respondToAssignment} className="w-full sm:w-auto">
                     <input type="hidden" name="assignmentId" value={assignment.id} />
                     <input type="hidden" name="response" value="declined" />
-                    <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Decline</button>
+                    <button className="min-h-11 w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Decline</button>
                   </form>
                 </div>
               ) : null}
@@ -290,7 +458,7 @@ export default async function CarrierPage({
                     }
 
                     return (
-                      <form action={proposeAdditionalCharge} className="grid gap-3 sm:grid-cols-[120px_1fr]">
+                      <form action={proposeAdditionalCharge} className="grid gap-3 sm:grid-cols-2">
                         <input type="hidden" name="deliveryId" value={assignment.delivery_request_id} />
                         <input type="hidden" name="quoteId" value={quote.id} />
                         <div>
@@ -301,7 +469,7 @@ export default async function CarrierPage({
                           <label className="mb-2 block text-sm font-medium" htmlFor={`chargeReason-${assignment.id}`}>Reason</label>
                           <input id={`chargeReason-${assignment.id}`} name="reason" type="text" placeholder="Waiting time, special handling, or approved extra" className="w-full rounded-xl border border-slate-300 px-3 py-2" />
                         </div>
-                        <button className="sm:col-span-2 rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Propose additional charge</button>
+                        <button className="min-h-11 sm:col-span-2 rounded-lg border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Propose additional charge</button>
                       </form>
                     );
                   })()}
@@ -313,7 +481,7 @@ export default async function CarrierPage({
                       {!charge.carrier_agreed_at ? (
                         <form action={agreeToAdditionalCharge} className="mt-2">
                           <input type="hidden" name="chargeId" value={charge.id} />
-                          <button className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Agree to this charge</button>
+                          <button className="min-h-11 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white sm:w-auto">Agree to this charge</button>
                         </form>
                       ) : (
                         <p className="mt-2 text-xs text-emerald-700">Carrier agreement recorded</p>
@@ -329,12 +497,25 @@ export default async function CarrierPage({
         </div>
       </section>
 
+      <section className="mt-8">
+        <h2 className="text-xl font-bold">Your reviews</h2>
+        <p className="mt-2 text-sm text-slate-600">{describeRatings(reviewRows.map((review) => Number(review.rating)))}</p>
+        <div className="mt-3 space-y-3">
+          {reviewRows.filter((review) => review.comment).map((review) => (
+            <article key={review.created_at} className="rounded-xl border border-slate-200 p-4">
+              <p className="font-semibold">{review.rating}/5</p>
+              <p className="mt-1 text-sm text-slate-600">{review.comment}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
       {locked ? (
         <p className="mt-8 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
           Your carrier application is {applicationStatus}. You cannot apply again until an administrator approves your account.
         </p>
       ) : (
-      <form action={submitCarrierApplication} className="mt-8 space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <form action={submitCarrierApplication} className="mt-8 space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div>
           <label className="mb-2 block text-sm font-medium" htmlFor="carrierType">Carrier type</label>
           <select id="carrierType" name="carrierType" defaultValue={profile?.carrier_type ?? ""} className="w-full rounded-xl border border-slate-300 px-4 py-3" required>
@@ -401,6 +582,6 @@ export default async function CarrierPage({
         </button>
       </form>
       )}
-    </main>
+    </PageShell>
   );
 }

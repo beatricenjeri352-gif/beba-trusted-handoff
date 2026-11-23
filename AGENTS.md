@@ -21,7 +21,7 @@ Active implementation flow:
 - Next.js App Router
 - Supabase PostgreSQL, Auth, RLS, and server actions
 - TypeScript and Tailwind CSS
-- Leaflet and OpenStreetMap for map pinning/search
+- Nominatim place search (Kenya) for pickup/drop-off; Google Maps Routes API for server-side road-distance routing
 - Google Maps Routes API for server-side actual road-distance routing
 - Carrier application, discovery, selection, and assignment
 - Delivery creation with pickup/destination pins and landmarks
@@ -29,33 +29,26 @@ Active implementation flow:
 
 ## Approved Pricing Rules
 
-The following rules are authoritative:
+The current walking pricing (approved by the user, replacing the earlier formula) is authoritative:
 
-- Base delivery fee: KES 50.
-- Minimum billable distance: 5 km.
-- Billable distance: maximum of actual route distance and 5 km.
-- Walking rate: KES 10 per billable km.
-- Bicycle rate: KES 20 per billable km.
-- Motorbike/motorcycle rate: KES 20 per billable km.
-- Car rate: KES 20 per billable km.
-- Distinguish walking, bicycle, motorbike, and car in the database and application.
-- No automatic weight, parcel-size, traffic, waiting-time, or special-handling charge.
+- Beba is not a delivery app. It connects the sender with the carrier. The carrier is paid the Beba-calculated amount, subject to agreement by both parties.
+- Distance: walking route distance from Google Maps Routes API (`computeRoutes`, `travelMode: WALK`), `distanceMeters` between the pickup pin and drop-off pin. Never straight-line distance and never an AI estimate.
+- Price table in `lib/pricing/walking-bands.ts` (the single config; do not hard-code in screens):
+  - up to and including 0.5 km: KES 60
+  - over 0.5 km, up to and including 1.2 km: KES 100
+  - over 1.2 km, up to and including 2.0 km: KES 150
+  - over 2.0 km, up to and including 3.0 km: KES 200
+  - over 3.0 km: "Too far to walk. Choose a car, tuktuk, or boda instead." No walking fee is offered.
+- Commission: 10% of the final approved delivery fee, rounded to the nearest whole shilling. No minimum.
+- Carrier earnings = fee minus commission.
+- If Google Maps fails, show the price as "Estimate" and recalculate when the route loads. Never use a guess or straight-line distance silently.
+- Money is stored as integer cents (whole shillings are multiples of 100). Distance is integer metres.
+- Prices and commission are calculated server-side only.
+- Vehicle pricing (car, tuktuk, boda, bicycle, motorbike) is not approved yet and is deferred.
 - Additional charges require a reason, carrier proposal, sender agreement, and Beba administrator approval.
-- Private negotiations are excluded from Beba commission.
-- In-app approved additions are included in the final Beba price.
-- Commission: 10% of the final approved Beba delivery price.
-- No minimum commission.
 - Commission becomes payable after successful receiver confirmation or an authorised review completion.
-- Commission and prices must be calculated server-side with integer cents and integer metres.
 
-Formula:
-
-```text
-Billable distance = max(actual route distance metres, 5000)
-Distance charge = billable distance km × transport rate
-Delivery price = 50 + distance charge
-Commission = final agreed Beba price × 10%
-```
+Earlier formula (superseded by the walking bands above, still in the database until a migration is approved): base KES 50, 5 km minimum billable distance, KES 10 walking / KES 20 vehicle per billable km, 10% commission.
 
 Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcharges.
 
@@ -65,9 +58,35 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
 - Carrier application, carrier discovery, carrier selection, and assignment accept/decline are implemented.
 - Carrier assignment read access and atomic selection are prepared in `202611190006_delivery_assignment_permissions.sql`; it has not been applied.
 - The pure pricing engine and 21 acceptance tests are implemented.
-- Administrator pricing controls and negotiated-charge approval UI are implemented locally; the approved 5 km minimum and 10% commission are fixed.
+- Administrator pricing controls and negotiated-charge approval UI are implemented locally. The walking bands (see Approved Pricing Rules) are in `lib/pricing/walking-bands.ts`, and the database quote function `create_walking_delivery_quote` uses them (migration `202611190010`, applied). The legacy `create_delivery_quote` remains for existing quotes.
 - The 202611190003 pricing migration has been reviewed and updated locally; it has not been deployed.
-- Server-side Google Maps Routes API integration is implemented locally; live API access has not been tested.
+- Server-side Google Maps Routes API integration is verified for walking routes (live `computeRoutes` WALK request returned 200 with `distanceMeters`). Vehicle travel modes are not yet live-tested.
+- Sender quotes use walking distance only (Google Routes `WALK`) through `create_walking_delivery_quote`, with bands from `lib/pricing/walking-bands.ts`. Routes over 3 km return "Too far to walk".
+- The sender delivery page shows a walking price preview before any carrier is chosen. It is calculated on page load from the Google walking route and stores nothing. If Google fails, it shows "Estimate unavailable" and no price.
+- Migration `202611190010_walking_band_quotes.sql` is applied on the hosted Beba project. The user ran it through the Supabase SQL Editor, and a read-only check confirmed the function, the `pricing_model` column, and the legacy-only 5 km check.
+- Migration `202611190011_carrier_bookings.sql` is applied on the hosted Beba project through the SQL Editor. It adds `carrier_bookings`, `delivery_assignments.carrier_booking_id`, and the functions `create_carrier_booking`, `add_delivery_to_carrier_booking`, and `respond_to_carrier_booking`. Carrier accept or decline applies to every delivery in a booking. Sender pages add deliveries to an open booking for the same carrier. The Supabase CLI migration history still needs repair for `0010` and `0011`.
+- Carrier distance and reviews (`BE_CARRIER_distance_reviews`): carriers publish live location while online; senders see carrier road distance to pickup (nearest first); carriers see road distance to each pickup; senders rate completed deliveries (1–5 stars, optional comment). Walking uses walking routes; bicycle uses bicycle routes; motorbike, car, and other vehicles use driving. Public ratings omit `sender_user_id`; only the reviewed carrier and administrators can read it. Migration `202611190012_carrier_location_and_reviews.sql` is applied on hosted (SQL Editor). Read-only check: location and review tables exist, review RLS is on, two review policies, public view has no `sender_user_id`. Vehicle rates are deferred. The Supabase CLI migration history still needs repair for `0010`, `0011`, and `0012`.
+- App pages use a shared mobile-first shell (`components/page-shell.tsx`): device-width viewport, safe-area padding, stacked actions under `sm`, and 44px tap targets. 
+- **Delivery creation workflow (`BE_DELIVERY_multistep_wizard`, tested and verified):**
+  - Sender delivery creation is now a multi-step wizard with visual progress tracking
+  - Step 1: Parcel Details (delivery method, description, size, weight)
+  - Step 2: Pickup Location (place search, GPS option, landmark description)
+  - Step 3: Drop-off Details (destination, landmark, receiver name, receiver phone)
+  - Progress tracker uses `OrderTracking` component (lucide-react icons: CheckCircle2 for completed, Circle for pending)
+  - Form state persists across step navigation (Back/Next buttons preserve entered data)
+  - Final step button changes from "Next" to "Create Delivery" to submit via server action
+  - Success screen displays tracking number format (BEB-{timestamp}) with "Find a Courier" button
+  - Pickup and drop-off use typed place suggestions (Nominatim) and GPS, with no map on wizard
+  - Vehicle rates are still deferred.
+- **Authentication workflow (`BE_AUTH_role_selection`, tested and verified):** 
+  - Welcome screen shows "Sign up" or "Sign in" buttons; both lead to the auth form.
+  - Sign up mode shows "Register as Sender" or "Register as Carrier" buttons; selection stores the role in Supabase user metadata (`registration_role`).
+  - After signup, role is passed to OAuth callback via query param (e.g., `/auth/callback?role=carrier`) to route carriers to `/jobs` and senders to `/deliveries`.
+  - Face and ID verification are preview-only warnings; they do not collect documents or biometric data.
+  - Email/password signup signs users in directly when Supabase "Confirm email" is disabled; this is testing-only and does not verify email ownership. For production, re-enable "Confirm email" and configure SMTP with proper email templates.
+  - Hosted environment: "Confirm email" toggle has been disabled in the Supabase dashboard (authenticated via email, saved, but network prevented verification of persistence).
+  - Tests, typecheck, lint, and build all passed. Full end-to-end signup/login testing with both roles is pending (requires local dev server restart and browser testing).
+  - Google sign-in requires OAuth provider and redirect setup. Phone verification and phone/username login remain unavailable until implemented. See `docs/04-technical-design/supabase-setup.md`.
 - No migration should be deployed without explicit user authorization.
 
 ## Database and Migration Rules
@@ -148,4 +167,9 @@ Older documentation conflicts with the approved prompt:
 - Google Maps Routes API access and billing have not been verified in the target environment.
 - Failed/cancelled/disputed delivery commission policy timing needs later confirmation.
 - M-Pesa reconciliation is intentionally excluded until pricing and successful-delivery commission are complete.
+- Local dev server must be restarted and both sender and carrier signup/login flows tested end-to-end before the auth story is complete.
+- Supabase "Confirm email" toggle persistence in hosted environment must be verified (network issue prevented confirmation during toggle).
+- Delivery wizard form submission and success screen display need end-to-end testing (form data must be validated and saved to database).
+- Location picker integration with wizard state needs verification (place search suggestions must properly update form state).
+- "Find a Courier" button on success screen needs to route to carrier selection/discovery page (not yet implemented).
 
