@@ -11,6 +11,18 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 
 The publishable/anon key is safe for browser use. Never put the service-role or secret key in Next.js client code or commit it to Git.
 
+The sender's walking review uses `GOOGLE_MAPS_API_KEY` on the server for Routes
+API. To show its route on a Google static map, enable Maps Static API and set
+`GOOGLE_MAPS_STATIC_BROWSER_KEY` and `GOOGLE_MAPS_STATIC_SIGNING_SECRET` in
+`.env.local`. The separate static-map key appears in image URLs: restrict it to
+the app's HTTP referrers and the Maps Static API, configure quotas and billing
+alerts, and do not reuse the server Routes key. Keep the signing secret
+server-only. Google recommends limiting unsigned requests. Without map
+configuration, the distance and walking estimate may still display, but the
+map is unavailable. Neither the route nor the map should be persisted by this
+preview. See [Google pricing](https://developers.google.com/maps/billing-and-pricing/pricing)
+and [digital signatures](https://developers.google.com/maps/documentation/maps-static/digital-signature).
+
 ## 2. Apply the initial migration locally
 
 Docker Desktop must be running.

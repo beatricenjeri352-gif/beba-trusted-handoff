@@ -138,8 +138,10 @@ A sender should be able to:
 - Publish the request.
 
 The current sender form groups parcel, pickup, and drop-off/receiver details in
-expandable sections. Pickup and drop-off landmarks are optional. Once the
-request is saved, the sender can open its carrier selection section.
+expandable sections. Pickup and drop-off landmarks are optional. Before saving,
+the sender can review and edit details and see a walking route and price estimate
+when available. Once the request is saved, the sender can open its carrier
+selection section.
 
 ### 8.2 Delivery methods
 

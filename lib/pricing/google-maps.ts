@@ -22,14 +22,15 @@ export function getGoogleMapsTravelMode(
 }
 
 interface GoogleRoutesResponse {
-  routes?: Array<{ distanceMeters?: number }>;
+  routes?: Array<{ distanceMeters?: number; polyline?: { encodedPolyline?: string } }>;
 }
 
-export async function getActualRouteDistanceMetres(
+async function requestRoute(
   transportMethod: TransportMethod,
   pickup: { latitude: number; longitude: number },
   destination: { latitude: number; longitude: number },
-): Promise<RouteDistanceResult> {
+  includePolyline: boolean,
+) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY?.trim();
   if (!apiKey) throw new Error("ROUTING_PROVIDER_NOT_CONFIGURED");
 
@@ -52,7 +53,7 @@ export async function getActualRouteDistanceMetres(
     method: "POST",
     headers: {
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "routes.distanceMeters",
+      "X-Goog-FieldMask": includePolyline ? "routes.distanceMeters,routes.polyline.encodedPolyline" : "routes.distanceMeters",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -75,9 +76,25 @@ export async function getActualRouteDistanceMetres(
     throw new Error("ROUTE_DISTANCE_NOT_AVAILABLE");
   }
 
+  return { metres: distanceMetres, polyline: payload.routes?.[0]?.polyline?.encodedPolyline ?? null };
+}
+
+export async function getActualRouteDistanceMetres(
+  transportMethod: TransportMethod,
+  pickup: { latitude: number; longitude: number },
+  destination: { latitude: number; longitude: number },
+): Promise<RouteDistanceResult> {
+  const route = await requestRoute(transportMethod, pickup, destination, false);
   return {
-    metres: distanceMetres,
+    metres: route.metres,
     provider: "google_maps_routes",
     providerReference: null,
   };
+}
+
+export async function getWalkingRouteForPreview(
+  pickup: { latitude: number; longitude: number },
+  destination: { latitude: number; longitude: number },
+) {
+  return requestRoute("walking", pickup, destination, true);
 }

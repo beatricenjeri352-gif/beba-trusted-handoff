@@ -68,16 +68,18 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
 - Carrier distance and reviews (`BE_CARRIER_distance_reviews`): carriers publish live location while online; senders see carrier road distance to pickup (nearest first); carriers see road distance to each pickup; senders rate completed deliveries (1–5 stars, optional comment). Walking uses walking routes; bicycle uses bicycle routes; motorbike, car, and other vehicles use driving. Public ratings omit `sender_user_id`; only the reviewed carrier and administrators can read it. Migration `202611190012_carrier_location_and_reviews.sql` is applied on hosted (SQL Editor). Read-only check: location and review tables exist, review RLS is on, two review policies, public view has no `sender_user_id`. Vehicle rates are deferred. The Supabase CLI migration history still needs repair for `0010`, `0011`, and `0012`.
 - App pages use a shared mobile-first shell (`components/page-shell.tsx`): device-width viewport, safe-area padding, stacked actions under `sm`, and 44px tap targets. 
 - The sender and carrier workspace headers have an account menu with sender/carrier switching and sign-out. The sender menu contains account details and recent deliveries; profile editing and settings are not yet available. Switching remains unavailable for rejected or suspended carrier profiles.
-- The sender landing page greets the user by first name when available and opens the existing delivery wizard on the same page. Returning home keeps the in-progress wizard state.
+- The sender landing page greets the user by first name from the profile or auth metadata when available, and opens the delivery wizard on the same page. Returning home keeps the in-progress wizard state during that page session. The home illustration uses a decorative Lucide truck and respects reduced-motion preferences.
 - Sender notifications use `202611190013_sender_notifications.sql`. The user reported applying it and verifying the table, RLS, policies, and triggers through the hosted SQL Editor; the signed-in panel loaded, but a hosted unread notification has not yet been tested. New delivery status changes, declined assignments, and proposed additional charges create account-level updates; opening an update marks it read. The panel also shows recent active deliveries. Existing history is not backfilled. The Supabase CLI migration history needs repair for `0013`.
 - **Delivery creation workflow:**
   - Sender delivery creation uses one page with expandable sections; validated completed sections show a green tick and can be reopened for edits
-  - Step 1: Parcel Details (delivery method, description, size, weight)
-  - Step 2: Pickup Location (place search, GPS option, landmark description)
-  - Step 3: Drop-off Details (destination, landmark, receiver name, receiver phone)
-  - Form state persists when navigating between sections; both landmarks are optional
-  - The final section submits via a server action; the success screen links to carrier selection on the new delivery
-  - Pickup and drop-off use typed place suggestions (Nominatim) and GPS, with no map on wizard
+  - Step 1: Parcel Details (delivery method, required description, optional size and weight).
+  - Step 2: Pickup Location (place search or GPS, optional landmark).
+  - Step 3: Drop-off and receiver (place search or GPS, optional landmark, name and phone).
+  - Form state persists when navigating between sections; editing a location clears its previously selected coordinates. The client validates each section before advancing or submitting.
+  - After drop-off, the sender reviews details before saving and can return to edit them. A server-side walking route preview requests distance and geometry together, and uses the walking bands without storing a quote. If routing fails, no price is guessed; if the map fails, the distance can still be shown.
+  - The review displays a signed Google static map with a separate browser-visible, referrer-restricted static-map key and a server-only signing secret. Do not expose the server Routes key. Static map setup, billing and live behavior must be verified before release.
+  - The review submits via a server action; the success screen shows the tracking number and links to the carrier section of the new delivery. It is not an edit screen.
+  - Pickup and drop-off use typed place suggestions (Nominatim) and GPS. The review map uses the walking route, not a straight-line approximation.
   - Vehicle rates are still deferred.
 - **Authentication workflow (`BE_AUTH_role_selection`, tested and verified):** 
   - Welcome screen shows "Sign up" or "Sign in" buttons; both lead to the auth form.
@@ -115,6 +117,10 @@ SUPABASE_SERVICE_ROLE_KEY
 ```
 
 Do not add either secret to browser code or `NEXT_PUBLIC_*` variables.
+The optional static-map integration requires a separate `GOOGLE_MAPS_STATIC_BROWSER_KEY`
+restricted to the app's domains and Maps Static API, plus a server-only
+`GOOGLE_MAPS_STATIC_SIGNING_SECRET`. The signed image URL exposes the static-map
+key to browsers, but never the Routes key or signing secret.
 
 Before treating routing as production-ready, verify Google Maps Routes API access in the target environment.
 
@@ -126,6 +132,7 @@ On provider or configuration failure:
 
 ## Active Branches
 
+- Sender home and delivery UI story: `BE_UI_sender_home` (local uncommitted changes at last check)
 - Pricing story: `BE_PRICING_delivery_quotes`
 - Carrier epic: `feature/carrier-workflow`
 - Completed carrier story: `BE_CARRIER_profile_application`
@@ -172,5 +179,6 @@ Older documentation conflicts with the approved prompt:
 - Local dev server must be restarted and both sender and carrier signup/login flows tested end-to-end before the auth story is complete.
 - Supabase "Confirm email" toggle persistence in hosted environment must be verified (network issue prevented confirmation during toggle).
 - Delivery wizard form submission and success screen display need end-to-end testing (form data must be validated and saved to database).
-- Location picker integration with wizard state needs verification (place search suggestions must properly update form state).
+- Signed-in local browser testing verified place suggestions, the pre-save review, back-to-edit state retention, and a refreshed live walking estimate after changing the pickup. No test delivery was saved; submission and the success screen remain unverified.
+- The static map showed "Route map unavailable" during the local test; its separate key, signing secret, restrictions, and live rendering still need verification. Saved delivery editing is not implemented.
 

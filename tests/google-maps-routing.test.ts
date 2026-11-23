@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getActualRouteDistanceMetres } from "../lib/pricing/google-maps.ts";
+import { getActualRouteDistanceMetres, getWalkingRouteForPreview } from "../lib/pricing/google-maps.ts";
 
 test("Google Maps Routes API maps each transport method and returns metres", async () => {
   const previousApiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -49,6 +49,27 @@ test("Google Maps Routes API maps each transport method and returns metres", asy
     } else {
       process.env.GOOGLE_MAPS_API_KEY = previousApiKey;
     }
+  }
+});
+
+test("walking preview requests distance and route geometry together", async () => {
+  const previousApiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const originalFetch = globalThis.fetch;
+  process.env.GOOGLE_MAPS_API_KEY = "test-google-maps-key";
+  globalThis.fetch = async (_input, init) => {
+    assert.equal(new Headers(init?.headers).get("X-Goog-FieldMask"), "routes.distanceMeters,routes.polyline.encodedPolyline");
+    assert.equal(JSON.parse(String(init?.body)).travelMode, "WALK");
+    return new Response(JSON.stringify({ routes: [{ distanceMeters: 500, polyline: { encodedPolyline: "abc" } }] }), { status: 200 });
+  };
+  try {
+    assert.deepEqual(await getWalkingRouteForPreview(
+      { latitude: -1.2, longitude: 36.8 },
+      { latitude: -1.3, longitude: 36.9 },
+    ), { metres: 500, polyline: "abc" });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousApiKey === undefined) delete process.env.GOOGLE_MAPS_API_KEY;
+    else process.env.GOOGLE_MAPS_API_KEY = previousApiKey;
   }
 });
 
