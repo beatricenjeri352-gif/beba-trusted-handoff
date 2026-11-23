@@ -77,6 +77,11 @@ Authorised team members responsible for approving carrier and business applicati
 - Users can have both sender and carrier capabilities.
 - Account permissions must reflect the user's approved roles.
 
+The current sender and carrier workspaces provide an account menu for switching
+workspaces and signing out. Profile and Settings are not yet available.
+The sender notification panel shows recent active deliveries and account-level
+delivery updates once the sender notifications migration is applied.
+
 ### 6.2 Carrier profiles
 
 - Carrier registration is optional.

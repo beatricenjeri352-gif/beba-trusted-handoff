@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 
 import { PageShell } from "@/components/page-shell";
+import { AccountMenu } from "@/components/account-menu";
 import { ProfileSwitcher } from "@/components/profile-switcher";
 import { getRoadDistancesMetres } from "@/lib/carrier/distance";
 import { describePickupDistance, describeRatings, isLocationFresh, routeTransportMethodForCarrier } from "@/lib/carrier/location";
@@ -346,7 +347,7 @@ export default async function CarrierPage({
 
   return (
     <PageShell>
-      <ProfileSwitcher current="carrier" />
+      <AccountMenu><ProfileSwitcher current="carrier" /></AccountMenu>
       <p className="mt-6 text-sm font-semibold text-emerald-700">Carrier workspace</p>
       <h1 className="mt-2 text-2xl font-bold sm:text-3xl">Carrier application</h1>
 
