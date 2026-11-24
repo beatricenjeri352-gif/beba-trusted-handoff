@@ -79,6 +79,7 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
   - After drop-off, the sender reviews details before saving and can return to edit them. A server-side walking route preview requests distance and geometry together, and uses the walking bands without storing a quote. If routing fails, no price is guessed; if the map fails, the distance can still be shown.
   - The review displays a signed Google static map with a separate browser-visible, referrer-restricted static-map key and a server-only signing secret. Do not expose the server Routes key. Static map setup, billing and live behavior must be verified before release.
   - The review submits via a server action; the success screen shows the tracking number and links to the carrier section of the new delivery. It is not an edit screen.
+  - The tracking ID can be copied or downloaded as a text file. The delivery page shows carrier selection first, including names, pickup road distance, reviews, completed-delivery counts and expandable profiles where available. It shows the journey's stops and current status, not live tracking. Quote and additional-charge actions remain after carrier selection.
   - Pickup and drop-off use typed place suggestions (Nominatim) and GPS. The review map uses the walking route, not a straight-line approximation.
   - Vehicle rates are still deferred.
 - **Authentication workflow (`BE_AUTH_role_selection`, tested and verified):** 

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import DeliveryLocationPickerLoader from "@/components/delivery-location-picker-loader";
+import { TrackingNumber } from "@/components/tracking-number";
 import { createDeliveryAction } from "@/lib/actions/delivery";
 import { getWalkingPreview } from "@/lib/actions/walking-preview";
 import { validateDeliveryStep, type DeliveryFormState, type DeliveryStep } from "@/lib/delivery/validation";
@@ -173,7 +174,10 @@ export function DeliveryWizard({ onBackHome }: { onBackHome: () => void }) {
         <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-700" aria-hidden="true" />
         <h2 className="mt-4 text-2xl font-bold">Your delivery request is ready!</h2>
         <p className="mt-2 text-slate-600">No carrier has been selected yet.</p>
-        <p className="mt-4 text-sm font-semibold text-emerald-700">Tracking: {created.tracking}</p>
+        <div className="mt-4 text-left">
+          <p className="text-sm text-slate-600">Your tracking ID</p>
+          <TrackingNumber tracking={created.tracking} />
+        </div>
         <Link
           href={`/deliveries/${created.id}#carrier`}
           className="mt-6 flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-700 px-6 py-3 font-semibold text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"

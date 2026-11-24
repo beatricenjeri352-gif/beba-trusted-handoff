@@ -8,6 +8,7 @@ import { calculateWalkingDeliveryQuote } from "@/lib/pricing/walking-bands";
 import { getCarrierDistancesToPickup } from "@/lib/carrier/distance";
 import { describeCarrierDistance, describeRatings, routeTransportMethodForCarrier, validateReview } from "@/lib/carrier/location";
 import { PageShell } from "@/components/page-shell";
+import { TrackingNumber } from "@/components/tracking-number";
 
 interface AssignmentRow {
   id: string;
@@ -43,66 +44,6 @@ interface ChargeRow {
   status: string;
 }
 
-type WalkingPricePreview =
-  | { status: "missing_points" }
-  | { status: "unavailable"; message: string }
-  | { status: "too_far"; distanceMetres: number }
-  | {
-      status: "priced";
-      distanceMetres: number;
-      feeCents: number;
-      commissionCents: number;
-      carrierEarningsCents: number;
-    };
-
-interface RoutePoint {
-  latitude: number | string | null;
-  longitude: number | string | null;
-}
-
-// Read-only preview: uses the Google walking route and the band table, and stores nothing.
-async function getWalkingPricePreview(
-  pickup: RoutePoint | undefined,
-  destination: RoutePoint | undefined,
-): Promise<WalkingPricePreview> {
-  if (pickup?.latitude == null || pickup?.longitude == null || destination?.latitude == null || destination?.longitude == null) {
-    return { status: "missing_points" };
-  }
-
-  let route;
-  try {
-    route = await getActualRouteDistanceMetres(
-      "walking",
-      { latitude: Number(pickup.latitude), longitude: Number(pickup.longitude) },
-      { latitude: Number(destination.latitude), longitude: Number(destination.longitude) },
-    );
-  } catch (error) {
-    return {
-      status: "unavailable",
-      message: error instanceof Error && error.message === "ROUTING_PROVIDER_NOT_CONFIGURED"
-        ? "Route distance is unavailable until the Google Maps key is configured on the server."
-        : "Estimate unavailable. A walking route could not be loaded, so no price is shown.",
-    };
-  }
-
-  const result = calculateWalkingDeliveryQuote(route.metres);
-  if (result.status === "too_far_to_walk") {
-    return { status: "too_far", distanceMetres: route.metres };
-  }
-
-  return {
-    status: "priced",
-    distanceMetres: route.metres,
-    feeCents: result.deliveryFeeCents,
-    commissionCents: result.commissionCents,
-    carrierEarningsCents: result.carrierEarningsCents,
-  };
-}
-
-function formatKes(cents: number): string {
-  return `KES ${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-}
-
 export default async function DeliveryDetailPage({
   params,
   searchParams,
@@ -128,18 +69,20 @@ export default async function DeliveryDetailPage({
 
   if (!delivery) notFound();
 
-  const { data: stops } = await supabase
+  const { data: stops, error: stopsError } = await supabase
     .from("delivery_stops")
     .select("stop_type, sequence_number, location_name, latitude, longitude, instructions, contact_name, contact_phone")
     .eq("delivery_request_id", delivery.id)
     .order("sequence_number", { ascending: true });
+  if (stopsError) console.error("Loading delivery journey failed", stopsError);
 
-  const { data: assignmentRaw } = await supabase
+  const { data: assignmentRaw, error: assignmentError } = await supabase
     .from("delivery_assignments")
     .select("id, carrier_user_id, assignment_status")
     .eq("delivery_request_id", delivery.id)
-    .in("assignment_status", ["pending_carrier_confirmation", "accepted"])
+    .in("assignment_status", ["pending_carrier_confirmation", "accepted", "completed"])
     .maybeSingle();
+  if (assignmentError) console.error("Loading carrier assignment failed", assignmentError);
 
   const { data: latestQuoteRaw } = await supabase
     .from("delivery_quotes")
@@ -163,12 +106,7 @@ export default async function DeliveryDetailPage({
 
   const negotiatedCharges = (negotiatedChargesRaw ?? []) as ChargeRow[];
 
-  const pricePreview = await getWalkingPricePreview(
-    stops?.find((stop) => stop.stop_type === "pickup"),
-    stops?.find((stop) => stop.stop_type === "destination"),
-  );
-
-  const { data: carriers } = await supabase
+  const { data: carriers, error: carriersError } = await supabase
     .from("carrier_profiles")
     .select("user_id, carrier_type, operating_towns, delivery_methods, vehicle_type, profile_description")
     .eq("approval_status", "approved")
@@ -179,16 +117,53 @@ export default async function DeliveryDetailPage({
   const carrierTravelModes = new Map(
     (carriers ?? []).map((carrier) => [carrier.user_id, routeTransportMethodForCarrier(carrier)]),
   );
-  const carrierDistances = delivery.current_status === "draft" && carrierIds.length && pickupStop?.latitude && pickupStop?.longitude
-    ? await getCarrierDistancesToPickup(carrierIds, {
+  let carrierDistances = new Map<string, number | null>();
+  let carrierDistancesUnavailable = false;
+  if (delivery.current_status === "draft" && carrierIds.length && pickupStop?.latitude != null && pickupStop?.longitude != null) {
+    try {
+      carrierDistances = await getCarrierDistancesToPickup(carrierIds, {
         latitude: Number(pickupStop.latitude),
         longitude: Number(pickupStop.longitude),
-      }, carrierTravelModes)
-    : new Map<string, number | null>();
+      }, carrierTravelModes);
+    } catch (error) {
+      console.error("Loading carrier distances failed", error);
+      carrierDistancesUnavailable = true;
+    }
+  } else if (delivery.current_status === "draft" && carrierIds.length) {
+    carrierDistancesUnavailable = true;
+  }
 
-  const { data: reviewRows } = carrierIds.length
-    ? await supabase.from("delivery_review_public").select("carrier_user_id, rating").in("carrier_user_id", carrierIds)
-    : { data: null };
+  const { data: reviewRows, error: reviewsError } = carrierIds.length
+    ? await supabase.from("delivery_review_public").select("carrier_user_id, rating, comment").in("carrier_user_id", carrierIds)
+    : { data: null, error: null };
+
+  const namesByCarrier = new Map<string, string>();
+  const completedByCarrier = new Map<string, number>();
+  if (carrierIds.length) {
+    try {
+      const admin = createSupabaseAdminClient();
+      const { data: names, error: namesError } = await admin.from("users")
+        .select("id, full_name").in("id", carrierIds);
+      if (namesError) throw namesError;
+      for (const name of names ?? []) {
+        if (name.full_name?.trim()) namesByCarrier.set(name.id, name.full_name.trim());
+      }
+      const counts = await Promise.all(carrierIds.map(async (carrierId) => {
+        const { count, error } = await admin.from("delivery_assignments")
+          .select("id, delivery_requests!inner(id)", { count: "exact", head: true })
+          .eq("carrier_user_id", carrierId)
+          .in("assignment_status", ["accepted", "completed"])
+          .eq("delivery_requests.current_status", "completed");
+        if (error || count == null) throw error ?? new Error("Carrier completed count unavailable");
+        return [carrierId, count] as const;
+      }));
+      for (const [carrierId, count] of counts) completedByCarrier.set(carrierId, count);
+    } catch (error) {
+      console.error("Loading carrier details failed", error);
+    }
+  }
+  if (carriersError) console.error("Loading carriers failed", carriersError);
+  if (reviewsError) console.error("Loading carrier reviews failed", reviewsError);
 
   const ratingsByCarrier = new Map<string, number[]>();
   for (const row of reviewRows ?? []) {
@@ -201,6 +176,7 @@ export default async function DeliveryDetailPage({
     if (distanceA == null || distanceB == null) return Number(distanceA == null) - Number(distanceB == null);
     return distanceA - distanceB;
   });
+  const assignedProfile = carriers?.find((carrier) => carrier.user_id === assignment?.carrier_user_id);
 
   const { data: existingReview } = await supabase
     .from("delivery_review_public")
@@ -438,16 +414,114 @@ export default async function DeliveryDetailPage({
     redirect(`/deliveries/${id}?saved=review-created`);
   }
 
+  const carrierSection = (
+    <section id="carrier" className="mb-6">
+      <h1 className="text-xl font-bold">{assignment ? "Your carrier" : "Choose a carrier"}</h1>
+      {assignmentError ? (
+        <p role="alert" className="mt-3 text-sm text-amber-800">Carrier assignment could not be loaded. Please try again.</p>
+      ) : assignment ? (
+        <div className="mt-3 rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
+          <p className="font-bold">{namesByCarrier.get(assignment.carrier_user_id) || "Carrier name unavailable"}</p>
+          <p>Assignment status: <strong>{assignment.assignment_status.replaceAll("_", " ")}</strong></p>
+          <p>Rating: {reviewsError ? "Reviews unavailable" : describeRatings(ratingsByCarrier.get(assignment.carrier_user_id))}</p>
+          <p>Successful deliveries: {completedByCarrier.get(assignment.carrier_user_id) ?? "Unavailable"}</p>
+          {assignedProfile ? (
+            <details className="mt-3">
+              <summary className="min-h-11 cursor-pointer font-semibold text-emerald-700">View carrier profile</summary>
+              {assignedProfile.profile_description ? <p className="break-words">{assignedProfile.profile_description}</p> : null}
+              {assignedProfile.operating_towns?.length ? <p className="mt-2">Areas: {assignedProfile.operating_towns.join(", ")}</p> : null}
+              <h2 className="mt-3 font-semibold">Reviews</h2>
+              {reviewsError ? <p>Reviews unavailable.</p> : reviewRows?.filter((review) => review.carrier_user_id === assignment.carrier_user_id && review.comment).length ? (
+                <ul className="mt-2 space-y-2">
+                  {reviewRows.filter((review) => review.carrier_user_id === assignment.carrier_user_id && review.comment).map((review, index) => (
+                    <li key={index} className="break-words">{review.rating}/5: {review.comment}</li>
+                  ))}
+                </ul>
+              ) : <p>No written reviews yet.</p>}
+            </details>
+          ) : <p className="mt-2">Carrier profile unavailable.</p>}
+        </div>
+      ) : delivery.current_status === "draft" ? (
+        <div className="mt-3 space-y-3">
+          {carriersError ? (
+            <p role="alert" className="text-sm text-amber-800">Carriers could not be loaded. Please try again.</p>
+          ) : rankedCarriers.length ? rankedCarriers.map((carrier) => (
+            <form key={carrier.user_id} action={selectCarrier} className="rounded-xl border border-slate-200 p-4">
+              <input type="hidden" name="carrierUserId" value={carrier.user_id} />
+              <p className="font-bold">{namesByCarrier.get(carrier.user_id) || "Carrier name unavailable"}</p>
+              <p className="mt-1 text-sm text-slate-600">{carrier.carrier_type?.replaceAll("_", " ") || "Carrier"}</p>
+              <p className="mt-1 text-sm font-semibold text-emerald-800">{carrierDistancesUnavailable ? "Distance unavailable right now" : describeCarrierDistance(carrierDistances, carrier.user_id)}</p>
+              <p className="mt-1 text-sm text-slate-600">Rating: {reviewsError ? "Reviews unavailable" : describeRatings(ratingsByCarrier.get(carrier.user_id))}</p>
+              <p className="mt-1 text-sm text-slate-600">Successful deliveries: {completedByCarrier.get(carrier.user_id) ?? "Unavailable"}</p>
+              <details className="mt-3 rounded-lg bg-slate-50 p-3 text-sm">
+                <summary className="min-h-11 cursor-pointer font-semibold text-emerald-700">View carrier profile</summary>
+                {carrier.profile_description ? <p className="break-words text-slate-700">{carrier.profile_description}</p> : null}
+                {carrier.operating_towns?.length ? <p className="mt-2 text-slate-600">Areas: {carrier.operating_towns.join(", ")}</p> : null}
+                {carrier.delivery_methods?.length ? <p className="mt-2 text-slate-600">Methods: {carrier.delivery_methods.join(", ").replaceAll("_", " ")}</p> : null}
+                <h2 className="mt-3 font-semibold">Reviews</h2>
+                {reviewsError ? <p className="text-slate-600">Reviews unavailable.</p> : reviewRows?.filter((review) => review.carrier_user_id === carrier.user_id && review.comment).length ? (
+                  <ul className="mt-2 space-y-2">
+                    {reviewRows.filter((review) => review.carrier_user_id === carrier.user_id && review.comment).map((review, index) => (
+                      <li key={index} className="break-words text-slate-600">{review.rating}/5: {review.comment}</li>
+                    ))}
+                  </ul>
+                ) : <p className="text-slate-600">No written reviews yet.</p>}
+              </details>
+              <button className="mt-3 min-h-11 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Select carrier</button>
+            </form>
+          )) : (
+            <p className="text-sm text-slate-600">No approved carriers are currently available.</p>
+          )}
+          {openBookings?.length ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <p className="font-bold">Add to an open carrier booking</p>
+              <p className="mt-1 text-sm text-slate-600">Send this delivery with a carrier you already booked for another delivery.</p>
+              <div className="mt-3 space-y-2">
+                {openBookings.map((booking) => (
+                  <form key={booking.id} action={addToBooking} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <input type="hidden" name="bookingId" value={booking.id} />
+                    <span className="text-sm text-slate-700">{namesByCarrier.get(booking.carrier_user_id) || "Booked carrier"}</span>
+                    <button className="min-h-11 w-full rounded-lg border border-emerald-700 px-3 py-2 text-sm font-semibold text-emerald-800 sm:w-auto">Add to booking</button>
+                  </form>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-slate-600">Carrier selection is no longer available for this delivery.</p>
+      )}
+    </section>
+  );
+
   return (
     <PageShell>
       <Link href="/deliveries" className="inline-flex min-h-11 items-center text-sm font-semibold text-emerald-700">← Back to deliveries</Link>
 
       <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        {carrierSection}
         <p className="text-sm font-semibold text-emerald-700">Tracking</p>
-        <h1 className="mt-2 text-2xl font-bold break-words sm:text-3xl">{delivery.tracking_number}</h1>
+        <div className="mt-2"><TrackingNumber tracking={delivery.tracking_number} /></div>
         <p className="mt-3 inline-block rounded-full bg-slate-100 px-3 py-1 text-sm font-medium">
           {delivery.current_status.replaceAll("_", " ")}
         </p>
+
+        <div className="mt-6">
+          <h2 className="font-bold">Delivery journey</h2>
+          <p className="mt-2 text-sm text-slate-600">Current status: {delivery.current_status.replaceAll("_", " ")}</p>
+          {stopsError ? <p role="alert" className="mt-2 text-sm text-amber-800">Journey details could not be loaded.</p> : (
+            <div className="mt-3 space-y-3">
+              {stops?.map((stop) => (
+                <div key={`${stop.stop_type}-${stop.sequence_number}`} className="rounded-xl bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-500">{stop.stop_type}</p>
+                  <p className="mt-1 font-semibold">{stop.location_name}</p>
+                  {stop.instructions ? <p className="text-sm text-slate-600">Nearest landmark: {stop.instructions}</p> : null}
+                  {stop.contact_name ? <p className="mt-1 text-sm text-slate-600">Receiver: {stop.contact_name}</p> : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {query.saved === "quote-created" ? (
           <p className="mt-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800" role="status">
@@ -473,10 +547,13 @@ export default async function DeliveryDetailPage({
                           ? "Your review could not be saved. Only the sender of a completed delivery can review its carrier, once."
                           : query.error === "RATING_INVALID" || query.error === "COMMENT_TOO_LONG"
                             ? "Choose a rating from 1 to 5, and keep the comment under 500 characters."
-                            : "The quote could not be created."}
+                            : query.error === "assignment-failed" || query.error === "booking-add-failed"
+                              ? "The carrier booking could not be saved. Please try again."
+                              : "The requested action could not be completed. Please try again."}
           </p>
         ) : null}
 
+        {delivery.current_status !== "draft" ? <>
         <dl className="mt-6 grid gap-4 sm:grid-cols-2">
           <div>
             <dt className="text-sm text-slate-500">Method</dt>
@@ -500,31 +577,9 @@ export default async function DeliveryDetailPage({
           <h2 className="font-bold">Parcel</h2>
           <p className="mt-2 text-slate-600">{delivery.parcel_description}</p>
         </div>
+        </> : null}
 
-        <div className="mt-6">
-          <h2 className="font-bold">Walking price preview</h2>
-          {pricePreview.status === "priced" ? (
-            <div className="mt-3 rounded-xl border border-slate-200 p-4">
-              <p className="text-2xl font-bold">{formatKes(pricePreview.feeCents)}</p>
-              <dl className="mt-3 grid grid-cols-2 gap-2 text-sm text-slate-600">
-                <div><dt>Walking distance</dt><dd className="font-semibold text-slate-900">{(pricePreview.distanceMetres / 1000).toFixed(2)} km</dd></div>
-                <div><dt>Delivery fee</dt><dd className="font-semibold text-slate-900">{formatKes(pricePreview.feeCents)}</dd></div>
-                <div><dt>Beba commission (10%)</dt><dd className="font-semibold text-slate-900">{formatKes(pricePreview.commissionCents)}</dd></div>
-                <div><dt>Carrier earns</dt><dd className="font-semibold text-slate-900">{formatKes(pricePreview.carrierEarningsCents)}</dd></div>
-              </dl>
-              <p className="mt-3 text-xs text-slate-500">Shown before choosing a carrier. Agreement is between you and the carrier.</p>
-            </div>
-          ) : pricePreview.status === "too_far" ? (
-            <p className="mt-3 rounded-xl bg-amber-50 p-4 text-sm font-medium text-amber-800">
-              Too far to walk ({(pricePreview.distanceMetres / 1000).toFixed(2)} km). Choose a car, tuktuk, or boda instead.
-            </p>
-          ) : pricePreview.status === "unavailable" ? (
-            <p className="mt-3 rounded-xl bg-amber-50 p-4 text-sm font-medium text-amber-800">{pricePreview.message}</p>
-          ) : (
-            <p className="mt-3 text-sm text-slate-600">Set the pickup and drop-off points to see the walking price.</p>
-          )}
-        </div>
-
+        {delivery.current_status !== "draft" ? <>
         <div className="mt-6">
           <h2 className="font-bold">Estimated price</h2>
           {latestQuote ? (
@@ -583,54 +638,7 @@ export default async function DeliveryDetailPage({
             <p className="mt-3 text-sm text-slate-600">No additional charges proposed.</p>
           )}
         </div>
-
-        <div id="carrier" className="mt-6">
-          <h2 className="font-bold">Carrier</h2>
-          {assignment ? (
-            <p className="mt-3 rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
-              Assignment status: <strong>{assignment.assignment_status.replaceAll("_", " ")}</strong>
-            </p>
-          ) : delivery.current_status === "draft" ? (
-            <div className="mt-3 space-y-3">
-              {openBookings?.length ? (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                  <p className="font-bold">Add to an open carrier booking</p>
-                  <p className="mt-1 text-sm text-slate-600">Send this delivery with a carrier you already booked for another delivery.</p>
-                  <div className="mt-3 space-y-2">
-                    {openBookings.map((booking) => {
-                      const bookedCarrier = carriers?.find((carrier) => carrier.user_id === booking.carrier_user_id);
-                      return (
-                        <form key={booking.id} action={addToBooking} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <input type="hidden" name="bookingId" value={booking.id} />
-                          <span className="text-sm text-slate-700">{bookedCarrier?.profile_description || "Booked carrier"}</span>
-                          <button className="min-h-11 w-full rounded-lg border border-emerald-700 px-3 py-2 text-sm font-semibold text-emerald-800 sm:w-auto">Add to booking</button>
-                        </form>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-              {rankedCarriers.length ? rankedCarriers.map((carrier) => (
-                <form key={carrier.user_id} action={selectCarrier} className="rounded-xl border border-slate-200 p-4">
-                  <input type="hidden" name="carrierUserId" value={carrier.user_id} />
-                  <p className="font-bold">{carrier.profile_description || "Approved carrier"}</p>
-                  <p className="mt-1 text-sm text-slate-600">{carrier.carrier_type?.replaceAll("_", " ") || "Carrier"}</p>
-                  {delivery.current_status === "draft" ? (
-                    <p className="mt-1 text-sm font-semibold text-emerald-800">{describeCarrierDistance(carrierDistances, carrier.user_id)}</p>
-                  ) : null}
-                  <p className="mt-1 text-sm text-slate-600">Rating: {describeRatings(ratingsByCarrier.get(carrier.user_id))}</p>
-                  {carrier.operating_towns?.length ? <p className="mt-1 text-sm text-slate-600">Areas: {carrier.operating_towns.join(", ")}</p> : null}
-                  {carrier.delivery_methods?.length ? <p className="mt-1 text-sm text-slate-600">Methods: {carrier.delivery_methods.join(", ").replaceAll("_", " ")}</p> : null}
-                  <button className="mt-3 min-h-11 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Select carrier</button>
-                </form>
-              )) : (
-                <p className="text-sm text-slate-600">No approved carriers are currently available.</p>
-              )}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-slate-600">Carrier selection is no longer available for this delivery.</p>
-          )}
-        </div>
+        </> : null}
 
         {delivery.current_status === "completed" && completedCarrierId ? (
           <div className="mt-6 rounded-xl border border-slate-200 p-4">
@@ -660,20 +668,6 @@ export default async function DeliveryDetailPage({
           </div>
         ) : null}
 
-        <div className="mt-6">
-          <h2 className="font-bold">Journey</h2>
-          <div className="mt-3 space-y-3">
-            {stops?.map((stop) => (
-              <div key={`${stop.stop_type}-${stop.sequence_number}`} className="rounded-xl bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase text-slate-500">{stop.stop_type}</p>
-                <p className="mt-1 font-semibold">{stop.location_name}</p>
-                {stop.instructions ? <p className="text-sm text-slate-600">Nearest landmark: {stop.instructions}</p> : null}
-                {stop.latitude && stop.longitude ? <p className="mt-1 text-xs text-slate-500">Pinned: {stop.latitude}, {stop.longitude}</p> : null}
-                {stop.contact_name ? <p className="mt-1 text-sm text-slate-600">Receiver: {stop.contact_name}</p> : null}
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </PageShell>
   );
