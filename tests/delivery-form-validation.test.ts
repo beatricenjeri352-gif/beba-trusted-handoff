@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validateDeliveryStep, type DeliveryFormState } from "../lib/delivery/validation.ts";
+import { isValidCoordinate, validateDeliveryStep, type DeliveryFormState } from "../lib/delivery/validation.ts";
 
 const valid: DeliveryFormState = {
   deliveryMethod: "within_town",
@@ -38,4 +38,14 @@ test("edited or invalid locations cannot remain completed", () => {
 
 test("an invalid optional receiver phone prevents completion", () => {
   assert.match(validateDeliveryStep(3, { ...valid, receiverPhone: "invalid" })!, /phone/);
+});
+
+test("coordinate check rejects non-numbers and out-of-range points", () => {
+  assert.equal(isValidCoordinate({ latitude: -1.2, longitude: 36.8 }), true);
+  assert.equal(isValidCoordinate({ latitude: 91, longitude: 0 }), false);
+  assert.equal(isValidCoordinate({ latitude: 0, longitude: -181 }), false);
+  assert.equal(isValidCoordinate({ latitude: Number.NaN, longitude: 0 }), false);
+  assert.equal(isValidCoordinate({ latitude: "1", longitude: 0 }), false);
+  assert.equal(isValidCoordinate(null), false);
+  assert.equal(isValidCoordinate({}), false);
 });

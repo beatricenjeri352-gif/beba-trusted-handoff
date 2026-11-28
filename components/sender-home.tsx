@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Truck } from "lucide-react";
+import { Truck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { DeliveryWizard } from "@/components/delivery-wizard";
@@ -54,18 +54,10 @@ export function SenderHome({ fullName }: { fullName: string | null }) {
 
       {started ? (
         <section hidden={!showWizard} aria-labelledby="create-delivery-heading" className="mt-6">
-          <button
-            type="button"
-            onClick={() => setShowWizard(false)}
-            className="mb-4 inline-flex min-h-11 items-center gap-2 font-semibold text-emerald-700 hover:text-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Back to home
-          </button>
           <h1 id="create-delivery-heading" ref={wizardHeadingRef} tabIndex={-1} className="mb-6 text-2xl font-bold sm:text-3xl">
             Create a delivery
           </h1>
-          <DeliveryWizard />
+          <DeliveryWizard onBackHome={() => setShowWizard(false)} />
         </section>
       ) : null}
     </>

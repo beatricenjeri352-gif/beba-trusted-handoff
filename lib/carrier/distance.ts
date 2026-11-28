@@ -19,10 +19,11 @@ export async function getCarrierDistancesToPickup(
   if (!carrierIds.length) return new Map();
 
   const admin = createSupabaseAdminClient();
-  const { data } = await admin
+  const { data, error } = await admin
     .from("carrier_locations")
     .select("carrier_user_id, latitude, longitude, updated_at")
     .in("carrier_user_id", carrierIds);
+  if (error) throw error;
 
   const onlineRows = (data ?? []).filter((row) => isLocationFresh(row.updated_at, nowMs));
   const distances = await getRoadDistancesMetres(

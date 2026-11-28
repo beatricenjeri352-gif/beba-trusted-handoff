@@ -84,6 +84,12 @@ The sender notification panel shows recent active deliveries and account-level
 delivery updates once the sender notifications migration is applied.
 The sender home welcomes the user and opens the delivery creation wizard on the
 same page.
+After creating a request, the tracking ID can be copied or downloaded as a
+text file. The delivery page puts carrier selection first and shows available
+profile details, road distance to pickup, reviews, and completed-delivery
+counts when those data can be loaded. The journey shows pickup, drop-off, and
+the current status; it is not live map tracking. Quote confirmation and
+additional-charge actions remain available after carrier selection.
 
 ### 6.2 Carrier profiles
 
@@ -138,8 +144,10 @@ A sender should be able to:
 - Publish the request.
 
 The current sender form groups parcel, pickup, and drop-off/receiver details in
-expandable sections. Pickup and drop-off landmarks are optional. Once the
-request is saved, the sender can open its carrier selection section.
+expandable sections. Pickup and drop-off landmarks are optional. Before saving,
+the sender can review and edit details and see a walking route and price estimate
+when available. Once the request is saved, the sender can open its carrier
+selection section.
 
 ### 8.2 Delivery methods
 

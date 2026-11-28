@@ -25,12 +25,16 @@ export function normalizePhone(value: string) {
   return null;
 }
 
+export function isValidCoordinate(point: unknown): point is { latitude: number; longitude: number } {
+  if (typeof point !== "object" || point === null) return false;
+  const { latitude, longitude } = point as Record<string, unknown>;
+  return typeof latitude === "number" && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+    && typeof longitude === "number" && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+}
+
 function hasSelectedLocation(name: string, latitude: string, longitude: string) {
   if (!name.trim() || !latitude.trim() || !longitude.trim()) return false;
-  const lat = Number(latitude);
-  const lng = Number(longitude);
-  return Number.isFinite(lat) && lat >= -90 && lat <= 90
-    && Number.isFinite(lng) && lng >= -180 && lng <= 180;
+  return isValidCoordinate({ latitude: Number(latitude), longitude: Number(longitude) });
 }
 
 export function validateDeliveryStep(step: DeliveryStep, data: DeliveryFormState): string | null {
