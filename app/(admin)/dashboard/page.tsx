@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { PageShell } from "@/components/page-shell";
+import { BackButton } from "@/components/back-button";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 interface ActivePricingConfig {
@@ -152,7 +153,8 @@ export default async function AdminPage({
 
   return (
     <PageShell width="wide">
-      <p className="text-sm font-semibold text-emerald-700">Administrator workspace</p>
+      <BackButton fallbackHref="/" />
+      <p className="mt-4 text-sm font-semibold text-emerald-700">Administrator workspace</p>
       <h1 className="mt-2 text-2xl font-bold sm:text-3xl">Pricing configuration</h1>
 
       {params.error ? (

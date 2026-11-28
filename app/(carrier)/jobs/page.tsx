@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 
 import { PageShell } from "@/components/page-shell";
+import { BackButton } from "@/components/back-button";
 import { AccountMenu } from "@/components/account-menu";
 import { ProfileSwitcher } from "@/components/profile-switcher";
 import { getRoadDistancesMetres } from "@/lib/carrier/distance";
@@ -347,7 +348,10 @@ export default async function CarrierPage({
 
   return (
     <PageShell>
-      <AccountMenu><ProfileSwitcher current="carrier" /></AccountMenu>
+      <div className="flex items-start justify-between gap-2">
+        <BackButton fallbackHref="/" />
+        <AccountMenu><ProfileSwitcher current="carrier" /></AccountMenu>
+      </div>
       <p className="mt-6 text-sm font-semibold text-emerald-700">Carrier workspace</p>
       <h1 className="mt-2 text-2xl font-bold sm:text-3xl">Carrier application</h1>
 

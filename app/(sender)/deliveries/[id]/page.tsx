@@ -1,5 +1,4 @@
 import { revalidatePath } from "next/cache";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -8,6 +7,7 @@ import { calculateWalkingDeliveryQuote } from "@/lib/pricing/walking-bands";
 import { getCarrierDistancesToPickup } from "@/lib/carrier/distance";
 import { describeCarrierDistance, describeRatings, routeTransportMethodForCarrier, validateReview } from "@/lib/carrier/location";
 import { PageShell } from "@/components/page-shell";
+import { BackButton } from "@/components/back-button";
 import { TrackingNumber } from "@/components/tracking-number";
 
 interface AssignmentRow {
@@ -496,7 +496,7 @@ export default async function DeliveryDetailPage({
 
   return (
     <PageShell>
-      <Link href="/deliveries" className="inline-flex min-h-11 items-center text-sm font-semibold text-emerald-700">← Back to deliveries</Link>
+      <BackButton fallbackHref="/deliveries" label="Back to deliveries" />
 
       <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         {carrierSection}

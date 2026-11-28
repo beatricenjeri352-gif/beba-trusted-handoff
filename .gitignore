@@ -18,3 +18,7 @@ dist/
 build/
 .next/
 *.tsbuildinfo
+
+# Python caches
+__pycache__/
+*.pyc

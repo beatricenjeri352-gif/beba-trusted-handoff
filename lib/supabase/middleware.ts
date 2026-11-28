@@ -40,12 +40,7 @@ export async function updateSupabaseSession(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (request.nextUrl.pathname === "/login" && session) {
-    const deliveriesUrl = request.nextUrl.clone();
-    deliveriesUrl.pathname = "/deliveries";
-    deliveriesUrl.search = "";
-    return NextResponse.redirect(deliveriesUrl);
-  }
-
+  // Signed-in users who open /login see a "continue or sign out" choice there
+  // instead of being silently redirected into their account.
   return response;
 }

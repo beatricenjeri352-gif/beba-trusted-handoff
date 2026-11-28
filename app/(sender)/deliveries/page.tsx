@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { AccountMenu } from "@/components/account-menu";
 import { PageShell } from "@/components/page-shell";
+import { BackButton } from "@/components/back-button";
 import { ProfileSwitcher } from "@/components/profile-switcher";
 import { SenderHome } from "@/components/sender-home";
 import { SenderNotifications, type SenderNotification } from "@/components/sender-notifications";
@@ -63,7 +64,9 @@ export default async function SenderPage({
 
   return (
     <PageShell width="medium">
-      <div className="flex items-start justify-end gap-2">
+      <div className="flex items-start gap-2">
+        <BackButton fallbackHref="/" />
+        <div className="flex-1" />
         <SenderNotifications
           notifications={updates.data ?? []}
           activeDeliveries={active.data ?? []}

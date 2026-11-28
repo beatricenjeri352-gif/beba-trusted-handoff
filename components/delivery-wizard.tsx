@@ -10,6 +10,7 @@ import { TrackingNumber } from "@/components/tracking-number";
 import { createDeliveryAction } from "@/lib/actions/delivery";
 import { getWalkingPreview } from "@/lib/actions/walking-preview";
 import { validateDeliveryStep, type DeliveryFormState, type DeliveryStep } from "@/lib/delivery/validation";
+import { formatKes } from "@/lib/pricing/format";
 
 const emptyForm: DeliveryFormState = {
   deliveryMethod: "within_town",
@@ -369,8 +370,8 @@ export function DeliveryWizard({ onBackHome }: { onBackHome: () => void }) {
                 <p className="mt-3 text-sm">Walking distance: <strong>{(preview.price.walkingDistanceMetres / 1000).toFixed(2)} km</strong></p>
                 {preview.price.status === "priced" ? (
                   <>
-                    <p className="mt-1 text-sm">Estimated delivery fee: <strong>KES {preview.price.deliveryFeeCents / 100}</strong></p>
-                    <p className="mt-1 text-sm">Beba commission: KES {preview.price.commissionCents / 100} &middot; Carrier earns: KES {preview.price.carrierEarningsCents / 100}</p>
+                    <p className="mt-1 text-sm">Estimated delivery fee: <strong>{formatKes(preview.price.deliveryFeeCents)}</strong></p>
+                    <p className="mt-1 text-sm">Beba commission: {formatKes(preview.price.commissionCents)} &middot; Carrier earns: {formatKes(preview.price.carrierEarningsCents)}</p>
                   </>
                 ) : <p className="mt-2 text-sm font-medium text-amber-800">{preview.price.message} Vehicle pricing is not yet available.</p>}
                 <p translate="no" className="mt-3 whitespace-nowrap text-xs text-slate-600">Google Maps</p>

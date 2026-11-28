@@ -91,6 +91,10 @@ Do not add KES 110, KES minimum commission, parcel surcharges, or traffic surcha
   - Hosted environment: "Confirm email" toggle has been disabled in the Supabase dashboard (authenticated via email, saved, but network prevented verification of persistence).
   - Tests, typecheck, lint, and build all passed. Full end-to-end signup/login testing with both roles is pending (requires local dev server restart and browser testing).
   - Google sign-in requires OAuth provider and redirect setup. Phone verification and phone/username login remain unavailable until implemented. See `docs/04-technical-design/supabase-setup.md`.
+  - Auth screens have a Back button (sign-up form returns to the sender/carrier choice; other screens return to the welcome page). A signed-in user opening `/login` sees "Continue to my account" or "Sign out" instead of being redirected.
+  - Email sign-up collects full name, email, a required Kenyan 07 mobile (saved to `public.users.phone_number` via the existing `phone_number` metadata trigger, unverified) and an optional username (auth metadata only; not unique and not usable for sign-in yet). Email and phone verification show as "Coming soon" placeholders. Sign-in has Email and "Phone or username" tabs; the second is a disabled placeholder.
+- **Welcome and auth UI:** the welcome page is a full-screen courier illustration (`public/hero-mobile.webp`) with the Beba logo (`public/beba-logo.png`, capital B) and an amber "Get started" button. Auth screens use `components/auth-scene.tsx` (illustration header plus white sheet; handoff image for sign-up, waving courier for sign-in). Sign-up uses role cards plus Continue, with a two-step progress bar. Brand palette: deep green, light green, white and amber. Illustration originals are in `design/originals/`.
+- Every app page has `components/back-button.tsx` (returns to the previous in-app page, otherwise to a fallback route).
 - No migration should be deployed without explicit user authorization.
 
 ## Database and Migration Rules
@@ -173,7 +177,7 @@ Older documentation conflicts with the approved prompt:
 ## Outstanding Blockers
 
 - Supabase migration deployment requires renewed CLI authentication.
-- The hosted `users` table denied the signed-in sender's profile query (permission error 42501). The sender greeting can use auth metadata, but profile table access needs investigation.
+- The hosted `users` table denied the signed-in sender's profile query (permission error 42501). Cause: RLS policies exist but `authenticated` had no table-level SELECT grant. Fix prepared in `202611190014_users_profile_select_grant.sql` (SELECT only, no UPDATE); it must be applied on hosted through the SQL Editor with user approval.
 - Google Maps Routes API access and billing have not been verified in the target environment.
 - Failed/cancelled/disputed delivery commission policy timing needs later confirmation.
 - M-Pesa reconciliation is intentionally excluded until pricing and successful-delivery commission are complete.
